@@ -35,6 +35,7 @@
 #include "tiledb/sm/c_api/tiledb.h"
 
 #include <cstring>
+#include <iostream>
 
 /** Tests for C API consolidation. */
 struct ConsolidationFx {

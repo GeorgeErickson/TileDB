@@ -97,6 +97,26 @@ class Consolidator {
   /* ********************************* */
 
   /**
+   * Consolidates the input fragments of the input array. This function
+   * implements a single consolidation step.
+   *
+   * @param array_name URI of array to consolidate.
+   * @param to_consolidate The fragments to consolidate in this consolidation
+   *     step.
+   * @param encryption_type The encryption type of the array
+   * @param encryption_key If the array is encrypted, the private encryption
+   *    key. For unencrypted arrays, pass `nullptr`.
+   * @param key_length The length in bytes of the encryption key.
+   * @return Status
+   */
+  Status consolidate(
+      const URI& array_uri,
+      const std::vector<FragmentInfo>& to_consolidate,
+      EncryptionType encryption_type,
+      const void* encryption_key,
+      uint32_t key_length);
+
+  /**
    * Copies the array by reading from the fragments to be consolidated
    * (with `query_r`) and writing to the new fragment (with `query_w`).
    *
@@ -146,7 +166,6 @@ class Consolidator {
    *     consolidated fragments.
    * @param buffers The buffers to be passed in the queries.
    * @param buffer_sizes The corresponding buffer sizes.
-   * @param fragment_num The number of fragments to be retrieved.
    * @param new_fragment_uri The URI of the new fragment to be created.
    * @return Status
    */
@@ -158,7 +177,6 @@ class Consolidator {
       Array* array_for_writes,
       void** buffers,
       uint64_t* buffer_sizes,
-      unsigned int* fragment_num,
       URI* new_fragment_uri);
 
   /** Creates the subarray that should represent the entire array domain. */
@@ -168,18 +186,19 @@ class Consolidator {
    * Deletes the fragment metadata files of the old fragments that
    * got consolidated. This renders the old fragments "invisible".
    *
-   * @param uris The URIs of the old fragments.
+   * @param fragments The old fragments.
    * @return Status
    */
-  Status delete_old_fragment_metadata(const std::vector<URI>& uris);
+  Status delete_old_fragment_metadata(
+      const std::vector<FragmentInfo>& fragments);
 
   /**
    * Deletes the old fragments that got consolidated.
    *
-   * @param uris The URIs of the old fragments.
+   * @param fragments The old fragments.
    * @return Status
    */
-  Status delete_old_fragments(const std::vector<URI>& uris);
+  Status delete_old_fragments(const std::vector<FragmentInfo>& fragments);
 
   /**
    * Frees the input buffers.
@@ -190,6 +209,18 @@ class Consolidator {
    */
   void free_buffers(
       unsigned int buffer_num, void** buffers, uint64_t* buffer_sizes) const;
+
+  /**
+   * Based on the input fragment info, this algorithm decides the (sorted) list
+   * of fragments to be consolidated in the next consolidation step.
+   *
+   * @param all_fragments Information about all the fragments.
+   * @param to_consolidate The fragments to consolidate in the next step.
+   * @return Status
+   */
+  Status get_next_consolidation_fragments(
+      const std::vector<FragmentInfo>& fragments,
+      std::vector<FragmentInfo>* to_consolidate) const;
 
   /**
    * Renames the new fragment URI. The new name has the format

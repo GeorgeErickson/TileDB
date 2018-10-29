@@ -2407,12 +2407,12 @@ int32_t tiledb_array_open_at(
   // Open array
   if (SAVE_ERROR_CATCH(
           ctx,
-          array->array_->open_at(
+          array->array_->open(
               static_cast<tiledb::sm::QueryType>(query_type),
+              timestamp,
               static_cast<tiledb::sm::EncryptionType>(TILEDB_NO_ENCRYPTION),
               nullptr,
-              0,
-              timestamp)))
+              0)))
     return TILEDB_ERR;
 
   return TILEDB_OK;
@@ -2455,12 +2455,12 @@ int32_t tiledb_array_open_at_with_key(
   // Open array
   if (SAVE_ERROR_CATCH(
           ctx,
-          array->array_->open_at(
+          array->array_->open(
               static_cast<tiledb::sm::QueryType>(query_type),
+              timestamp,
               static_cast<tiledb::sm::EncryptionType>(encryption_type),
               encryption_key,
-              key_length,
-              timestamp)))
+              key_length)))
     return TILEDB_ERR;
 
   return TILEDB_OK;
@@ -2493,7 +2493,7 @@ int32_t tiledb_array_reopen_at(
     return TILEDB_ERR;
 
   // Reopen array
-  if (SAVE_ERROR_CATCH(ctx, array->array_->reopen_at(timestamp)))
+  if (SAVE_ERROR_CATCH(ctx, array->array_->reopen(timestamp)))
     return TILEDB_ERR;
 
   return TILEDB_OK;
@@ -3515,7 +3515,7 @@ int32_t tiledb_kv_open_at(
   // Prepare the key-value store
   if (SAVE_ERROR_CATCH(
           ctx,
-          kv->kv_->open_at(
+          kv->kv_->open(
               static_cast<tiledb::sm::QueryType>(query_type),
               static_cast<tiledb::sm::EncryptionType>(TILEDB_NO_ENCRYPTION),
               nullptr,
@@ -3565,7 +3565,7 @@ int32_t tiledb_kv_open_at_with_key(
   // Prepare the key-value store
   if (SAVE_ERROR_CATCH(
           ctx,
-          kv->kv_->open_at(
+          kv->kv_->open(
               static_cast<tiledb::sm::QueryType>(query_type),
               static_cast<tiledb::sm::EncryptionType>(encryption_type),
               encryption_key,
@@ -3603,7 +3603,7 @@ int32_t tiledb_kv_reopen_at(
     return TILEDB_ERR;
 
   // Re-open kv
-  if (SAVE_ERROR_CATCH(ctx, kv->kv_->reopen_at(timestamp)))
+  if (SAVE_ERROR_CATCH(ctx, kv->kv_->reopen(timestamp)))
     return TILEDB_ERR;
 
   return TILEDB_OK;

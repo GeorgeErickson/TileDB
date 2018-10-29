@@ -31,6 +31,7 @@
  */
 
 #include "tiledb/sm/storage_manager/consolidator.h"
+#include "tiledb/sm/fragment/fragment_info.h"
 #include "tiledb/sm/misc/logger.h"
 #include "tiledb/sm/misc/utils.h"
 #include "tiledb/sm/misc/uuid.h"
@@ -65,13 +66,62 @@ Status Consolidator::consolidate(
     EncryptionType encryption_type,
     const void* encryption_key,
     uint32_t key_length) {
-  std::vector<URI> old_fragment_uris;
   URI array_uri = URI(array_name);
+  std::vector<FragmentInfo> to_consolidate;
+  auto timestamp = utils::time::timestamp_now_ms();
 
+  // TODO (sp): perform checks to allow failing earlier, e.g., if encryption key
+  // is wrong
+
+  do {
+    // Get fragment info
+    std::vector<FragmentInfo> fragment_info;
+    RETURN_NOT_OK(storage_manager_->get_fragment_info(
+        array_uri, timestamp, &fragment_info));
+
+    // TODO (sp): perhaps change `get_fragment_info` to open and close an array
+
+    // No need to consolidate if no more than 1 fragment exist
+    if (fragment_info.size() <= 1)
+      break;
+
+    // Find the next fragments to be consolidated
+    RETURN_NOT_OK(
+        get_next_consolidation_fragments(fragment_info, &to_consolidate));
+
+    RETURN_NOT_OK(consolidate(
+        array_uri,
+        to_consolidate,
+        encryption_type,
+        encryption_key,
+        key_length));
+
+    // TODO (sp): Update `fragment_info` without recomputing old fragment sizes
+
+  } while (true);
+
+  return Status::Ok();
+}
+
+/* ****************************** */
+/*        PRIVATE METHODS         */
+/* ****************************** */
+
+Status Consolidator::consolidate(
+    const URI& array_uri,
+    const std::vector<FragmentInfo>& to_consolidate,
+    EncryptionType encryption_type,
+    const void* encryption_key,
+    uint32_t key_length) {
   // Open array for reading
   Array array_for_reads(array_uri, storage_manager_);
   RETURN_NOT_OK(array_for_reads.open(
-      QueryType::READ, encryption_type, encryption_key, key_length))
+      QueryType::READ,
+      to_consolidate,
+      encryption_type,
+      encryption_key,
+      key_length))
+
   if (array_for_reads.is_empty()) {
     RETURN_NOT_OK(array_for_reads.close());
     return Status::Ok();
@@ -108,7 +158,6 @@ Status Consolidator::consolidate(
   }
 
   // Create queries
-  unsigned int fragment_num;
   auto query_r = (Query*)nullptr;
   auto query_w = (Query*)nullptr;
   URI new_fragment_uri;
@@ -120,39 +169,27 @@ Status Consolidator::consolidate(
       &array_for_writes,
       buffers,
       buffer_sizes,
-      &fragment_num,
       &new_fragment_uri);
   if (!st.ok()) {
-    storage_manager_->array_close(array_uri, QueryType::READ);
-    storage_manager_->array_close(array_uri, QueryType::WRITE);
+    storage_manager_->array_close_for_reads(array_uri);
+    storage_manager_->array_close_for_writes(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
-  }
-
-  // Check number of fragments
-  if (fragment_num <= 1) {  // Nothing to consolidate
-    storage_manager_->array_close(array_uri, QueryType::READ);
-    storage_manager_->array_close(array_uri, QueryType::WRITE);
-    clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
-    return Status::Ok();
   }
 
   // Read from one array and write to the other
   st = copy_array(query_r, query_w);
   if (!st.ok()) {
-    storage_manager_->array_close(array_uri, QueryType::READ);
-    storage_manager_->array_close(array_uri, QueryType::WRITE);
+    storage_manager_->array_close_for_reads(array_uri);
+    storage_manager_->array_close_for_writes(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
   }
 
-  // Get old fragment uris
-  old_fragment_uris = query_r->fragment_uris();
-
   // Close array for reading
-  st = storage_manager_->array_close(array_uri, QueryType::READ);
+  st = storage_manager_->array_close_for_reads(array_uri);
   if (!st.ok()) {
-    storage_manager_->array_close(array_uri, QueryType::WRITE);
+    storage_manager_->array_close_for_writes(array_uri);
     storage_manager_->vfs()->remove_dir(new_fragment_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
@@ -161,7 +198,7 @@ Status Consolidator::consolidate(
   // Lock the array exclusively
   st = storage_manager_->array_xlock(array_uri);
   if (!st.ok()) {
-    storage_manager_->array_close(array_uri, QueryType::WRITE);
+    storage_manager_->array_close_for_writes(array_uri);
     storage_manager_->vfs()->remove_dir(new_fragment_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
@@ -170,7 +207,7 @@ Status Consolidator::consolidate(
   // Finalize both queries
   st = query_w->finalize();
   if (!st.ok()) {
-    storage_manager_->array_close(array_uri, QueryType::WRITE);
+    storage_manager_->array_close_for_writes(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     storage_manager_->array_xunlock(array_uri);
     storage_manager_->vfs()->remove_dir(new_fragment_uri);
@@ -178,7 +215,7 @@ Status Consolidator::consolidate(
   }
 
   // Close array
-  st = storage_manager_->array_close(array_uri, QueryType::WRITE);
+  storage_manager_->array_close_for_writes(array_uri);
   if (!st.ok()) {
     storage_manager_->array_xunlock(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
@@ -187,9 +224,9 @@ Status Consolidator::consolidate(
   }
 
   // Delete old fragment metadata. This makes the old fragments invisible
-  st = delete_old_fragment_metadata(old_fragment_uris);
+  st = delete_old_fragment_metadata(to_consolidate);
   if (!st.ok()) {
-    delete_old_fragments(old_fragment_uris);
+    delete_old_fragments(to_consolidate);
     storage_manager_->array_xunlock(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
@@ -198,23 +235,19 @@ Status Consolidator::consolidate(
   // Unlock the array
   st = storage_manager_->array_xunlock(array_uri);
   if (!st.ok()) {
-    delete_old_fragments(old_fragment_uris);
+    delete_old_fragments(to_consolidate);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
   }
 
   // Delete old fragments. The array does not need to be locked.
-  st = delete_old_fragments(old_fragment_uris);
+  st = delete_old_fragments(to_consolidate);
 
   // Clean up
   clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
 
   return st;
 }
-
-/* ****************************** */
-/*        PRIVATE METHODS         */
-/* ****************************** */
 
 Status Consolidator::copy_array(Query* query_r, Query* query_w) {
   do {
@@ -295,18 +328,12 @@ Status Consolidator::create_queries(
     Array* array_for_writes,
     void** buffers,
     uint64_t* buffer_sizes,
-    unsigned int* fragment_num,
     URI* new_fragment_uri) {
   // Create read query
   *query_r = new Query(storage_manager_, array_for_reads);
   if (!(*query_r)->array_schema()->is_kv())
     RETURN_NOT_OK((*query_r)->set_layout(Layout::GLOBAL_ORDER));
   RETURN_NOT_OK(set_query_buffers(*query_r, buffers, buffer_sizes));
-
-  // Get fragment num and terminate with success if it is <=1
-  *fragment_num = (*query_r)->fragment_num();
-  if (*fragment_num <= 1)
-    return Status::Ok();
 
   // Get last fragment URI, which will be the URI of the consolidated fragment
   *new_fragment_uri = (*query_r)->last_fragment_uri();
@@ -349,18 +376,20 @@ Status Consolidator::create_subarray(Array* array, void** subarray) const {
 }
 
 Status Consolidator::delete_old_fragment_metadata(
-    const std::vector<URI>& uris) {
-  for (auto& uri : uris) {
-    auto meta_uri = uri.join_path(constants::fragment_metadata_filename);
+    const std::vector<FragmentInfo>& fragments) {
+  for (auto& fragment : fragments) {
+    auto meta_uri =
+        fragment.uri_.join_path(constants::fragment_metadata_filename);
     RETURN_NOT_OK(storage_manager_->vfs()->remove_file(meta_uri));
   }
 
   return Status::Ok();
 }
 
-Status Consolidator::delete_old_fragments(const std::vector<URI>& uris) {
-  for (auto& uri : uris)
-    RETURN_NOT_OK(storage_manager_->vfs()->remove_dir(uri));
+Status Consolidator::delete_old_fragments(
+    const std::vector<FragmentInfo>& fragments) {
+  for (auto& fragment : fragments)
+    RETURN_NOT_OK(storage_manager_->vfs()->remove_dir(fragment.uri_));
 
   return Status::Ok();
 }
@@ -372,6 +401,15 @@ void Consolidator::free_buffers(
   }
   std::free(buffers);
   delete[] buffer_sizes;
+}
+
+Status Consolidator::get_next_consolidation_fragments(
+    const std::vector<FragmentInfo>& all_fragments,
+    std::vector<FragmentInfo>* to_consolidate) const {
+  // TODO: implement appropriate selection algorithm here
+  *to_consolidate = all_fragments;
+
+  return Status::Ok();
 }
 
 Status Consolidator::rename_new_fragment_uri(URI* uri) const {
