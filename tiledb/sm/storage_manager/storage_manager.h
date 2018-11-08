@@ -322,6 +322,16 @@ class StorageManager {
       std::vector<FragmentInfo>* fragment_info) const;
 
   /**
+   * Gets the fragment info for a single fragment URI.
+   *
+   * @param fragment_uri The fragment URI.
+   * @param fragment_info The fragment info to retrieve.
+   * @return Status
+   */
+  Status get_fragment_info(
+      const URI& fragment_uri, FragmentInfo* fragment_info) const;
+
+  /**
    * Creates a TileDB group.
    *
    * @param group The URI of the group to be created.

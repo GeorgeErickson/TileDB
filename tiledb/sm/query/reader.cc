@@ -408,7 +408,7 @@ Status Reader::set_buffer(
   if (attribute != constants::coords &&
       array_schema_->attribute(attribute) == nullptr)
     return LOG_STATUS(
-        Status::WriterError("Cannot set buffer; Invalid attribute"));
+        Status::ReaderError("Cannot set buffer; Invalid attribute"));
 
   // Check that attribute is fixed-sized
   bool var_size =

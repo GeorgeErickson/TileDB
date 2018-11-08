@@ -44,6 +44,14 @@
 /*             MACROS             */
 /* ****************************** */
 
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 namespace tiledb {
 namespace sm {
 
@@ -61,6 +69,17 @@ Consolidator::~Consolidator() = default;
 /*               API              */
 /* ****************************** */
 
+// TODO: change constants to config params
+// TODO: - constants::consolidation_steps
+// TODO: - constants::consolidation_buffer_size
+// TODO: - constants::consolidation_step_min_frags
+// TODO: - constants::consolidation_step_max_frags
+// TODO: - constants::consolidation_step_size_ratio
+
+// TODO: Tests
+// TODO: Docs
+
+// TODO: add config here and check params
 Status Consolidator::consolidate(
     const char* array_name,
     EncryptionType encryption_type,
@@ -70,35 +89,45 @@ Status Consolidator::consolidate(
   std::vector<FragmentInfo> to_consolidate;
   auto timestamp = utils::time::timestamp_now_ms();
 
-  // TODO (sp): perform checks to allow failing earlier, e.g., if encryption key
-  // is wrong
+  // Get fragment info
+  std::vector<FragmentInfo> fragment_info;
+  RETURN_NOT_OK(storage_manager_->get_fragment_info(
+      array_uri, timestamp, &fragment_info));
 
+  uint32_t step = 0;
   do {
-    // Get fragment info
-    std::vector<FragmentInfo> fragment_info;
-    RETURN_NOT_OK(storage_manager_->get_fragment_info(
-        array_uri, timestamp, &fragment_info));
-
-    // TODO (sp): perhaps change `get_fragment_info` to open and close an array
-
     // No need to consolidate if no more than 1 fragment exist
     if (fragment_info.size() <= 1)
       break;
 
     // Find the next fragments to be consolidated
-    RETURN_NOT_OK(
-        get_next_consolidation_fragments(fragment_info, &to_consolidate));
+    RETURN_NOT_OK(compute_next_to_consolidate(fragment_info, &to_consolidate));
 
+    // Check if there is nothing to consolidate
+    if (to_consolidate.empty())
+      return Status::Ok();
+
+    // Consolidate the selected fragments
+    URI new_fragment_uri;
     RETURN_NOT_OK(consolidate(
         array_uri,
         to_consolidate,
         encryption_type,
         encryption_key,
-        key_length));
+        key_length,
+        &new_fragment_uri));
 
-    // TODO (sp): Update `fragment_info` without recomputing old fragment sizes
+    FragmentInfo new_fragment_info;
+    RETURN_NOT_OK(storage_manager_->get_fragment_info(
+        new_fragment_uri, &new_fragment_info));
 
-  } while (true);
+    // Update fragment info
+    update_fragment_info(to_consolidate, new_fragment_info, &fragment_info);
+
+    // Advance number of steps
+    ++step;
+
+  } while (step < constants::consolidation_steps);
 
   return Status::Ok();
 }
@@ -112,7 +141,8 @@ Status Consolidator::consolidate(
     const std::vector<FragmentInfo>& to_consolidate,
     EncryptionType encryption_type,
     const void* encryption_key,
-    uint32_t key_length) {
+    uint32_t key_length,
+    URI* new_fragment_uri) {
   // Open array for reading
   Array array_for_reads(array_uri, storage_manager_);
   RETURN_NOT_OK(array_for_reads.open(
@@ -160,7 +190,6 @@ Status Consolidator::consolidate(
   // Create queries
   auto query_r = (Query*)nullptr;
   auto query_w = (Query*)nullptr;
-  URI new_fragment_uri;
   st = create_queries(
       &query_r,
       &query_w,
@@ -169,7 +198,7 @@ Status Consolidator::consolidate(
       &array_for_writes,
       buffers,
       buffer_sizes,
-      &new_fragment_uri);
+      new_fragment_uri);
   if (!st.ok()) {
     storage_manager_->array_close_for_reads(array_uri);
     storage_manager_->array_close_for_writes(array_uri);
@@ -190,7 +219,7 @@ Status Consolidator::consolidate(
   st = storage_manager_->array_close_for_reads(array_uri);
   if (!st.ok()) {
     storage_manager_->array_close_for_writes(array_uri);
-    storage_manager_->vfs()->remove_dir(new_fragment_uri);
+    storage_manager_->vfs()->remove_dir(*new_fragment_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
   }
@@ -199,7 +228,7 @@ Status Consolidator::consolidate(
   st = storage_manager_->array_xlock(array_uri);
   if (!st.ok()) {
     storage_manager_->array_close_for_writes(array_uri);
-    storage_manager_->vfs()->remove_dir(new_fragment_uri);
+    storage_manager_->vfs()->remove_dir(*new_fragment_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     return st;
   }
@@ -210,7 +239,7 @@ Status Consolidator::consolidate(
     storage_manager_->array_close_for_writes(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     storage_manager_->array_xunlock(array_uri);
-    storage_manager_->vfs()->remove_dir(new_fragment_uri);
+    storage_manager_->vfs()->remove_dir(*new_fragment_uri);
     return st;
   }
 
@@ -219,7 +248,7 @@ Status Consolidator::consolidate(
   if (!st.ok()) {
     storage_manager_->array_xunlock(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
-    storage_manager_->vfs()->remove_dir(new_fragment_uri);
+    storage_manager_->vfs()->remove_dir(*new_fragment_uri);
     return st;
   }
 
@@ -403,11 +432,84 @@ void Consolidator::free_buffers(
   delete[] buffer_sizes;
 }
 
-Status Consolidator::get_next_consolidation_fragments(
-    const std::vector<FragmentInfo>& all_fragments,
+Status Consolidator::compute_next_to_consolidate(
+    const std::vector<FragmentInfo>& fragments,
     std::vector<FragmentInfo>* to_consolidate) const {
-  // TODO: implement appropriate selection algorithm here
-  *to_consolidate = all_fragments;
+  // Preparation
+  to_consolidate->clear();
+  auto min = constants::consolidation_step_min_frags;
+  min = (uint32_t)((min > fragments.size()) ? fragments.size() : min);
+  auto max = constants::consolidation_step_max_frags;
+  max = (uint32_t)((max > fragments.size()) ? fragments.size() : max);
+  auto size_ratio = constants::consolidation_step_size_ratio;
+
+  // Sanity checks
+  if (min > max)
+    return Status::ConsolidationError(
+        "Cannot compute next fragments to consolidate; Minimum fragments "
+        "config parameter is larger than the maximum");
+  if (size_ratio > 1.0f || size_ratio < 0.0f)
+    return Status::ConsolidationError(
+        "Cannot compute next fragments to consolidate; Step size ratio config"
+        "parameter must be in [0.0, 1.0]");
+
+  // Trivial case - all fragments
+  if (min == max && max == fragments.size() && size_ratio == 0.0f) {
+    *to_consolidate = fragments;
+    return Status::Ok();
+  }
+
+  // Trivial case - no fragments
+  if (max == 0)
+    return Status::Ok();
+
+  // Prepare the dynamic-programming matrix. The rows are from 1 to max
+  // and the columns represent the fragments in `fragments`.
+  std::vector<std::vector<uint64_t>> m;
+  auto col_num = fragments.size();
+  auto row_num = max;
+  m.resize(row_num);
+  for (auto row : m)
+    row.resize(col_num);
+
+  // Entry m[i][j] contains the collective size of fragments
+  // fragments[j], ..., fragments[j+i]. If the size ratio
+  // of any adjacent pair in the above list is smaller than the
+  // defined one, then the size sum of that entry is infinity (UINT64_MAX).
+  for (size_t i = 0; i < row_num; ++i) {
+    for (size_t j = 0; j < col_num; ++j) {
+      if (i == 0) {  // In the first row we store the sizes of `fragments`
+        m[i][j] = fragments[0].size_;
+      } else if (i + j >= col_num) {  // Non-valid entries
+        m[i][j] = UINT64_MAX;
+      } else {  // Every other row is computed using the previous row
+        float ratio = fragments[i + (j - 1)].size_ / fragments[i + j].size_;
+        ratio = (ratio <= 1.0f) ? ratio : 1.0f / ratio;
+        if (ratio >= size_ratio)
+          m[i][j] = m[i - 1][j] + fragments[i + j].size_;
+        else
+          m[i][j] = UINT64_MAX;
+      }
+    }
+  }
+
+  // Choose the maximal set of fragments with cardinality in [min, max]
+  // with the minimum size
+  uint64_t min_col = UINT64_MAX;
+  for (int row = row_num - 1; row >= (int)min; --row) {
+    min_col = UINT64_MAX;
+    for (auto col : m[row]) {
+      if (col < min_col)
+        min_col = col;
+    }
+
+    // Results found
+    if (min_col != UINT64_MAX) {
+      for (size_t i = min_col; i < min_col + row; ++i)
+        to_consolidate->emplace_back(fragments[i]);
+      break;
+    }
+  }
 
   return Status::Ok();
 }
@@ -457,6 +559,38 @@ Status Consolidator::set_query_buffers(
         query->set_buffer(constants::coords, buffers[bid], &buffer_sizes[bid]));
 
   return Status::Ok();
+}
+
+void Consolidator::update_fragment_info(
+    const std::vector<FragmentInfo>& to_consolidate,
+    const FragmentInfo& new_fragment_info,
+    std::vector<FragmentInfo>* fragment_info) const {
+  auto to_consolidate_it = to_consolidate.begin();
+  auto fragment_it = fragment_info->begin();
+  std::vector<FragmentInfo> updated_fragment_info;
+  bool new_fragment_added = false;
+
+  while (to_consolidate_it != to_consolidate.end() &&
+         fragment_it != fragment_info->end()) {
+    // No match - add the fragment info and advance `fragment_it`
+    if (fragment_it->uri_.to_string() != to_consolidate_it->uri_.to_string()) {
+      updated_fragment_info.emplace_back(*fragment_it);
+      ++fragment_it;
+    } else {  // Match - add new fragment only once and advance both iterators
+      if (!new_fragment_added) {
+        updated_fragment_info.emplace_back(new_fragment_info);
+        new_fragment_added = true;
+      }
+      ++fragment_it;
+      ++to_consolidate_it;
+    }
+  }
+
+  assert(
+      updated_fragment_info.size() ==
+      fragment_info->size() - to_consolidate.size() + 1);
+
+  *fragment_info = std::move(updated_fragment_info);
 }
 
 }  // namespace sm

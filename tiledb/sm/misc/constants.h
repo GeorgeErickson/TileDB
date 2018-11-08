@@ -176,6 +176,22 @@ extern const std::string group_filename;
 /** The buffer size for each attribute used in consolidation. */
 extern const uint64_t consolidation_buffer_size;
 
+/** Number of steps in the consolidation algorithm. */
+extern const uint32_t consolidation_steps;
+
+/** Minimum number of fragments to consolidate per step. */
+extern const uint32_t consolidation_step_min_frags;
+
+/** Maximum number of fragments to consolidate per step. */
+extern const uint32_t consolidation_step_max_frags;
+
+/**
+ * Size ratio of two fragments to be considered for consolidation in a step.
+ * This should be a value in [0.0, 1.0].
+ * 0.0 means always consolidate and 1.0 never consolidate.
+ */
+extern const float consolidation_step_size_ratio;
+
 /** The maximum number of bytes written in a single I/O. */
 extern const uint64_t max_write_bytes;
 

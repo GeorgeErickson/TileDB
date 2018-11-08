@@ -49,6 +49,9 @@ struct FragmentInfo {
   uint64_t size_;
 
   /** Constructor. */
+  FragmentInfo() = default;
+
+  /** Constructor. */
   FragmentInfo(const URI& uri, uint64_t timestamp, uint64_t size)
       : uri_(uri)
       , timestamp_(timestamp)

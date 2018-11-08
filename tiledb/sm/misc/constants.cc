@@ -189,6 +189,22 @@ const std::string group_filename = "__tiledb_group.tdb";
 /** The buffer size for each attribute used in consolidation. */
 const uint64_t consolidation_buffer_size = 50000000;
 
+/** Number of steps in the consolidation algorithm. */
+const uint32_t consolidation_steps = 1;
+
+/** Minimum number of fragments to consolidate per step. */
+const uint32_t consolidation_step_min_frags = UINT32_MAX;
+
+/** Maximum number of fragments to consolidate per step. */
+const uint32_t consolidation_step_max_frags = UINT32_MAX;
+
+/**
+ * Size ratio of two fragments to be considered for consolidation in a step.
+ * This should be a value in [0.0, 1.0].
+ * 0.0 means always consolidate and 1.0 never consolidate.
+ */
+const float consolidation_step_size_ratio = 0.0f;
+
 /** The maximum number of bytes written in a single I/O. */
 const uint64_t max_write_bytes = std::numeric_limits<int>::max();
 

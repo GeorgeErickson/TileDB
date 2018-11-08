@@ -59,7 +59,7 @@ class Consolidator {
    *
    * @param storage_manager The storage manager.
    */
-  Consolidator(StorageManager* storage_manager);
+  explicit Consolidator(StorageManager* storage_manager);
 
   /** Destructor. */
   ~Consolidator();
@@ -107,6 +107,8 @@ class Consolidator {
    * @param encryption_key If the array is encrypted, the private encryption
    *    key. For unencrypted arrays, pass `nullptr`.
    * @param key_length The length in bytes of the encryption key.
+   * @param new_fragment_uri The URI of the fragment created after
+   *     consolidating the `to_consolidate` fragments.
    * @return Status
    */
   Status consolidate(
@@ -114,7 +116,8 @@ class Consolidator {
       const std::vector<FragmentInfo>& to_consolidate,
       EncryptionType encryption_type,
       const void* encryption_key,
-      uint32_t key_length);
+      uint32_t key_length,
+      URI* new_fragment_uri);
 
   /**
    * Copies the array by reading from the fragments to be consolidated
@@ -214,11 +217,11 @@ class Consolidator {
    * Based on the input fragment info, this algorithm decides the (sorted) list
    * of fragments to be consolidated in the next consolidation step.
    *
-   * @param all_fragments Information about all the fragments.
+   * @param fragments Information about all the fragments.
    * @param to_consolidate The fragments to consolidate in the next step.
    * @return Status
    */
-  Status get_next_consolidation_fragments(
+  Status compute_next_to_consolidate(
       const std::vector<FragmentInfo>& fragments,
       std::vector<FragmentInfo>* to_consolidate) const;
 
@@ -240,6 +243,24 @@ class Consolidator {
    */
   Status set_query_buffers(
       Query* query, void** buffers, uint64_t* buffer_sizes) const;
+
+  /**
+   * Updates the `fragment_info` by removing `to_consolidate` and
+   * replacing those fragment info objects with `new_fragment_info`.
+   *
+   * @param to_consolidate Fragment info objects to remove from `fragment_info`.
+   * @param new_fragment_info The new object that replaces `to_consolidate`
+   *     in `fragment_info`.
+   * @param fragment_info The fragment info vector to be updated.
+   * @return void
+   *
+   * @note The algorithm assumes that to_consolidate is a sub vector of
+   *     `fragment_info` of size >=0.
+   */
+  void update_fragment_info(
+      const std::vector<FragmentInfo>& to_consolidate,
+      const FragmentInfo& new_fragment_info,
+      std::vector<FragmentInfo>* fragment_info) const;
 };
 
 }  // namespace sm

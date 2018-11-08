@@ -831,6 +831,31 @@ Status StorageManager::get_fragment_info(
   return Status::Ok();
 }
 
+Status StorageManager::get_fragment_info(
+    const URI& fragment_uri, FragmentInfo* fragment_info) const {
+  // Get fragment name
+  std::string uri_str = fragment_uri.c_str();
+  if (uri_str.back() == '/')
+    uri_str.pop_back();
+  std::string fragment_name = URI(uri_str).last_path_part();
+  assert(utils::parse::starts_with(fragment_name, "__"));
+
+  // Get timestamp in the end of the name after '_'
+  uint64_t timestamp;
+  assert(fragment_name.find_last_of('_') != std::string::npos);
+  auto t_str = fragment_name.substr(fragment_name.find_last_of('_') + 1);
+  sscanf(t_str.c_str(), "%lld", (long long int*)&timestamp);
+
+  // Get fragment size
+  uint64_t size;
+  RETURN_NOT_OK(vfs_->dir_size(fragment_uri, &size));
+
+  // Set fragment info
+  *fragment_info = FragmentInfo(fragment_uri, timestamp, size);
+
+  return Status::Ok();
+}
+
 Status StorageManager::group_create(const std::string& group) {
   // Create group URI
   URI uri(group);
