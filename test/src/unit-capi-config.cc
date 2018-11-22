@@ -193,6 +193,11 @@ void check_save_to_file() {
   ss << "sm.check_coord_dups true\n";
   ss << "sm.check_coord_oob true\n";
   ss << "sm.check_global_order true\n";
+  ss << "sm.consolidation_buffer_size 50000000\n";
+  ss << "sm.consolidation_step_max_frags 4294967295\n";
+  ss << "sm.consolidation_step_min_frags 4294967295\n";
+  ss << "sm.consolidation_step_size_ratio 0\n";
+  ss << "sm.consolidation_steps 1\n";
   ss << "sm.dedup_coords false\n";
   ss << "sm.enable_signal_handlers true\n";
   ss << "sm.fragment_metadata_cache_size 10000000\n";
@@ -373,6 +378,11 @@ TEST_CASE("C API: Test config iter", "[capi], [config]") {
   all_param_values["sm.num_reader_threads"] = "1";
   all_param_values["sm.num_writer_threads"] = "1";
   all_param_values["sm.num_tbb_threads"] = "-1";
+  all_param_values["sm.consolidation_steps"] = "1";
+  all_param_values["sm.consolidation_step_min_frags"] = "4294967295";
+  all_param_values["sm.consolidation_step_max_frags"] = "4294967295";
+  all_param_values["sm.consolidation_buffer_size"] = "50000000";
+  all_param_values["sm.consolidation_step_size_ratio"] = "0";
   all_param_values["vfs.num_threads"] =
       std::to_string(std::thread::hardware_concurrency());
   all_param_values["vfs.min_parallel_size"] = "10485760";

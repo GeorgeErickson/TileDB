@@ -497,7 +497,8 @@ Status StorageManager::array_consolidate(
     const char* array_name,
     EncryptionType encryption_type,
     const void* encryption_key,
-    uint32_t key_length) {
+    uint32_t key_length,
+    const Config* config) {
   // Check array URI
   URI array_uri(array_name);
   if (array_uri.is_invalid()) {
@@ -513,7 +514,7 @@ Status StorageManager::array_consolidate(
         "Cannot consolidate array; Array does not exist"));
   }
   return consolidator_->consolidate(
-      array_name, encryption_type, encryption_key, key_length);
+      array_name, encryption_type, encryption_key, key_length, config);
 }
 
 Status StorageManager::array_create(

@@ -20,8 +20,18 @@
 
 ### C++ API
 
+* `{Array,Map}::consolidate{_with_key}` now takes a `Config` as an optional argument.
 * Added function `VFS::dir_size`.
 * Added function `VFS::ls`.
+
+## Breaking changes
+
+### C API
+
+* `tiledb_{array,kv}_consolidate{_with_key}` now takes a `tiledb_config_t*` as argument.
+
+### C++ API
+
 
 # TileDB v1.4.1 Release Notes
 

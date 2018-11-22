@@ -64,6 +64,11 @@ class Config {
     bool check_coord_dups_;
     bool check_coord_oob_;
     bool check_global_order_;
+    uint64_t consolidation_buffer_size_;
+    uint32_t consolidation_steps_;
+    uint32_t consolidation_step_min_frags_;
+    uint32_t consolidation_step_max_frags_;
+    float consolidation_step_size_ratio_;
 
     SMParams() {
       array_schema_cache_size_ = constants::array_schema_cache_size;
@@ -78,6 +83,11 @@ class Config {
       check_coord_dups_ = true;
       check_coord_oob_ = true;
       check_global_order_ = true;
+      consolidation_steps_ = constants::consolidation_steps;
+      consolidation_buffer_size_ = constants::consolidation_buffer_size;
+      consolidation_step_min_frags_ = constants::consolidation_step_min_frags;
+      consolidation_step_max_frags_ = constants::consolidation_step_max_frags;
+      consolidation_step_size_ratio_ = constants::consolidation_step_size_ratio;
     }
   };
 
@@ -213,6 +223,10 @@ class Config {
    * - `sm.tile_cache_size` <br>
    *    The tile cache size in bytes. Any `uint64_t` value is acceptable. <br>
    *    **Default**: 10,000,000
+   * - `sm.consolidation_buffer_size` <br>
+   *    The size (in bytes) of the attribute buffers used during
+   *    consolidation. <br>
+   *    **Default**: 50,000,000
    * - `sm.array_schema_cache_size` <br>
    *    Array schema cache size in bytes. Any `uint64_t` value is acceptable.
    * <br>
@@ -239,6 +253,20 @@ class Config {
    *    be modified from the default. See also the documentation for TBB's
    *    `task_scheduler_init` class.<br>
    *    **Default**: TBB automatic
+   * - `sm.consolidation_steps` <br>
+   *    The number of consolidation steps to be performed when executing
+   *    the consolidation algorithm.<br>
+   *    **Default**: 1
+   * - `sm.consolidation_step_min_frags` <br>
+   *    The minimum number of fragments to consolidate in a single step.<br>
+   *    **Default**: UINT32_MAX
+   * - `sm.consolidation_step_max_frags` <br>
+   *    The maximum number of fragments to consolidate in a single step.<br>
+   *    **Default**: UINT32_MAX
+   * - `sm.consolidation_step_size_ratio` <br>
+   *    The size ratio that two ("adjacent") fragments must satisfy to be
+   *    considered for consolidation in a single step.<br>
+   *    **Default**: 0.0
    * - `vfs.num_threads` <br>
    *    The number of threads allocated for VFS operations (any backend), per
    *    VFS instance. <br>
@@ -407,8 +435,23 @@ class Config {
   /** Sets the number of TBB threads, properly parsing the input value.*/
   Status set_sm_num_tbb_threads(const std::string& value);
 
+  /** Sets the number of consolidation steps.*/
+  Status set_sm_consolidation_steps(const std::string& value);
+
+  /** Sets the minimum number of fragments to consolidate in a step.*/
+  Status set_sm_consolidation_step_min_frags(const std::string& value);
+
+  /** Sets the maximum number of fragments to consolidate in a step.*/
+  Status set_sm_consolidation_step_max_frags(const std::string& value);
+
+  /** Sets the size ratio requirement for two "adjacent" fragments in a step. */
+  Status set_sm_consolidation_step_size_ratio(const std::string& value);
+
   /** Sets the tile cache size, properly parsing the input value. */
   Status set_sm_tile_cache_size(const std::string& value);
+
+  /** Sets the consolidation buffer size, properly parsing the input value. */
+  Status set_sm_consolidation_buffer_size(const std::string& value);
 
   /** Sets the number of VFS threads. */
   Status set_vfs_num_threads(const std::string& value);

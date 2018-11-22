@@ -99,6 +99,27 @@ Status convert(const std::string& str, long* value) {
   return Status::Ok();
 }
 
+Status convert(const std::string& str, uint32_t* value) {
+  if (!is_uint(str))
+    return LOG_STATUS(Status::UtilsError(
+        "Failed to convert string to uint32_t; Invalid argument"));
+
+  try {
+    auto v = std::stoul(str);
+    if (v > UINT32_MAX)
+      throw std::out_of_range("Cannot convert long to unsigned int");
+    *value = (uint32_t)v;
+  } catch (std::invalid_argument& e) {
+    return LOG_STATUS(Status::UtilsError(
+        "Failed to convert string to uint32_t; Invalid argument"));
+  } catch (std::out_of_range& e) {
+    return LOG_STATUS(Status::UtilsError(
+        "Failed to convert string to uint32_t; Value out of range"));
+  }
+
+  return Status::Ok();
+}
+
 Status convert(const std::string& str, uint64_t* value) {
   if (!is_uint(str))
     return LOG_STATUS(Status::UtilsError(
@@ -112,6 +133,20 @@ Status convert(const std::string& str, uint64_t* value) {
   } catch (std::out_of_range& e) {
     return LOG_STATUS(Status::UtilsError(
         "Failed to convert string to uint64_t; Value out of range"));
+  }
+
+  return Status::Ok();
+}
+
+Status convert(const std::string& str, float* value) {
+  try {
+    *value = std::stof(str);
+  } catch (std::invalid_argument& e) {
+    return LOG_STATUS(Status::UtilsError(
+        "Failed to convert string to float32_t; Invalid argument"));
+  } catch (std::out_of_range& e) {
+    return LOG_STATUS(Status::UtilsError(
+        "Failed to convert string to float32_t; Value out of range"));
   }
 
   return Status::Ok();

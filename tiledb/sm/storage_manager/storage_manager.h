@@ -228,13 +228,16 @@ class StorageManager {
    * @param encryption_key If the array is encrypted, the private encryption
    *    key. For unencrypted arrays, pass `nullptr`.
    * @param key_length The length in bytes of the encryption key.
+   * @param config Configuration parameters for the consolidation
+   *     (`nullptr` means default).
    * @return Status
    */
   Status array_consolidate(
       const char* array_name,
       EncryptionType encryption_type,
       const void* encryption_key,
-      uint32_t key_length);
+      uint32_t key_length,
+      const Config* config);
 
   /**
    * Creates a TileDB array storing its schema.

@@ -1538,14 +1538,15 @@ void ConsolidationFx::read_kv_keys_acd_abc() {
 void ConsolidationFx::consolidate_dense() {
   int rc;
   if (encryption_type == TILEDB_NO_ENCRYPTION) {
-    rc = tiledb_array_consolidate(ctx_, DENSE_ARRAY_NAME);
+    rc = tiledb_array_consolidate(ctx_, DENSE_ARRAY_NAME, nullptr);
   } else {
     rc = tiledb_array_consolidate_with_key(
         ctx_,
         DENSE_ARRAY_NAME,
         encryption_type,
         encryption_key,
-        (uint32_t)strlen(encryption_key));
+        (uint32_t)strlen(encryption_key),
+        nullptr);
   }
   REQUIRE(rc == TILEDB_OK);
 }
@@ -1553,14 +1554,15 @@ void ConsolidationFx::consolidate_dense() {
 void ConsolidationFx::consolidate_sparse() {
   int rc;
   if (encryption_type == TILEDB_NO_ENCRYPTION) {
-    rc = tiledb_array_consolidate(ctx_, SPARSE_ARRAY_NAME);
+    rc = tiledb_array_consolidate(ctx_, SPARSE_ARRAY_NAME, nullptr);
   } else {
     rc = tiledb_array_consolidate_with_key(
         ctx_,
         SPARSE_ARRAY_NAME,
         encryption_type,
         encryption_key,
-        (uint32_t)strlen(encryption_key));
+        (uint32_t)strlen(encryption_key),
+        nullptr);
   }
   REQUIRE(rc == TILEDB_OK);
 }
@@ -1568,14 +1570,15 @@ void ConsolidationFx::consolidate_sparse() {
 void ConsolidationFx::consolidate_kv() {
   int rc;
   if (encryption_type == TILEDB_NO_ENCRYPTION) {
-    rc = tiledb_kv_consolidate(ctx_, KV_NAME);
+    rc = tiledb_kv_consolidate(ctx_, KV_NAME, nullptr);
   } else {
     rc = tiledb_kv_consolidate_with_key(
         ctx_,
         KV_NAME,
         encryption_type,
         encryption_key,
-        (uint32_t)strlen(encryption_key));
+        (uint32_t)strlen(encryption_key),
+        nullptr);
   }
   REQUIRE(rc == TILEDB_OK);
 }

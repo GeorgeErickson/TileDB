@@ -170,6 +170,8 @@ Status Config::set(const std::string& param, const std::string& value) {
     RETURN_NOT_OK(set_sm_check_global_order(value));
   } else if (param == "sm.tile_cache_size") {
     RETURN_NOT_OK(set_sm_tile_cache_size(value));
+  } else if (param == "sm.consolidation_buffer_size") {
+    RETURN_NOT_OK(set_sm_consolidation_buffer_size(value));
   } else if (param == "sm.array_schema_cache_size") {
     RETURN_NOT_OK(set_sm_array_schema_cache_size(value));
   } else if (param == "sm.fragment_metadata_cache_size") {
@@ -180,6 +182,14 @@ Status Config::set(const std::string& param, const std::string& value) {
     RETURN_NOT_OK(set_sm_num_async_threads(value));
   } else if (param == "sm.num_tbb_threads") {
     RETURN_NOT_OK(set_sm_num_tbb_threads(value));
+  } else if (param == "sm.consolidation_steps") {
+    RETURN_NOT_OK(set_sm_consolidation_steps(value));
+  } else if (param == "sm.consolidation_step_min_frags") {
+    RETURN_NOT_OK(set_sm_consolidation_step_min_frags(value));
+  } else if (param == "sm.consolidation_step_max_frags") {
+    RETURN_NOT_OK(set_sm_consolidation_step_max_frags(value));
+  } else if (param == "sm.consolidation_step_size_ratio") {
+    RETURN_NOT_OK(set_sm_consolidation_step_size_ratio(value));
   } else if (param == "vfs.num_threads") {
     RETURN_NOT_OK(set_vfs_num_threads(value));
   } else if (param == "vfs.min_parallel_size") {
@@ -282,6 +292,12 @@ Status Config::unset(const std::string& param) {
     value << sm_params_.tile_cache_size_;
     param_values_["sm.tile_cache_size"] = value.str();
     value.str(std::string());
+  } else if (param == "sm.consolidation_buffer_size") {
+    sm_params_.consolidation_buffer_size_ =
+        constants::consolidation_buffer_size;
+    value << sm_params_.consolidation_buffer_size_;
+    param_values_["sm.consolidation_buffer_size"] = value.str();
+    value.str(std::string());
   } else if (param == "sm.array_schema_cache_size") {
     sm_params_.array_schema_cache_size_ = constants::array_schema_cache_size;
     value << sm_params_.array_schema_cache_size_;
@@ -317,6 +333,29 @@ Status Config::unset(const std::string& param) {
     sm_params_.num_tbb_threads_ = constants::num_tbb_threads;
     value << sm_params_.num_tbb_threads_;
     param_values_["sm.num_tbb_threads"] = value.str();
+    value.str(std::string());
+  } else if (param == "sm.consolidation_steps") {
+    sm_params_.consolidation_steps_ = constants::consolidation_steps;
+    value << sm_params_.consolidation_steps_;
+    param_values_["sm.consolidation_steps"] = value.str();
+    value.str(std::string());
+  } else if (param == "sm.consolidation_step_min_frags") {
+    sm_params_.consolidation_step_min_frags_ =
+        constants::consolidation_step_min_frags;
+    value << sm_params_.consolidation_step_min_frags_;
+    param_values_["sm.consolidation_step_min_frags"] = value.str();
+    value.str(std::string());
+  } else if (param == "sm.consolidation_step_max_frags") {
+    sm_params_.consolidation_step_max_frags_ =
+        constants::consolidation_step_max_frags;
+    value << sm_params_.consolidation_step_max_frags_;
+    param_values_["sm.consolidation_step_max_frags"] = value.str();
+    value.str(std::string());
+  } else if (param == "sm.consolidation_step_size_ratio") {
+    sm_params_.consolidation_step_size_ratio_ =
+        constants::consolidation_step_size_ratio;
+    value << sm_params_.consolidation_step_size_ratio_;
+    param_values_["sm.consolidation_step_size_ratio"] = value.str();
     value.str(std::string());
   } else if (param == "vfs.num_threads") {
     vfs_params_.num_threads_ = constants::vfs_num_threads;
@@ -474,6 +513,10 @@ void Config::set_default_param_values() {
   param_values_["sm.tile_cache_size"] = value.str();
   value.str(std::string());
 
+  value << sm_params_.consolidation_buffer_size_;
+  param_values_["sm.consolidation_buffer_size"] = value.str();
+  value.str(std::string());
+
   value << sm_params_.array_schema_cache_size_;
   param_values_["sm.array_schema_cache_size"] = value.str();
   value.str(std::string());
@@ -500,6 +543,22 @@ void Config::set_default_param_values() {
 
   value << sm_params_.num_tbb_threads_;
   param_values_["sm.num_tbb_threads"] = value.str();
+  value.str(std::string());
+
+  value << sm_params_.consolidation_steps_;
+  param_values_["sm.consolidation_steps"] = value.str();
+  value.str(std::string());
+
+  value << sm_params_.consolidation_step_min_frags_;
+  param_values_["sm.consolidation_step_min_frags"] = value.str();
+  value.str(std::string());
+
+  value << sm_params_.consolidation_step_max_frags_;
+  param_values_["sm.consolidation_step_max_frags"] = value.str();
+  value.str(std::string());
+
+  value << sm_params_.consolidation_step_size_ratio_;
+  param_values_["sm.consolidation_step_size_ratio"] = value.str();
   value.str(std::string());
 
   value << vfs_params_.num_threads_;
@@ -705,10 +764,50 @@ Status Config::set_sm_num_tbb_threads(const std::string& value) {
   return Status::Ok();
 }
 
+Status Config::set_sm_consolidation_steps(const std::string& value) {
+  uint32_t v;
+  RETURN_NOT_OK(utils::parse::convert(value, &v));
+  sm_params_.consolidation_steps_ = v;
+
+  return Status::Ok();
+}
+
+Status Config::set_sm_consolidation_step_min_frags(const std::string& value) {
+  uint32_t v;
+  RETURN_NOT_OK(utils::parse::convert(value, &v));
+  sm_params_.consolidation_step_min_frags_ = v;
+
+  return Status::Ok();
+}
+
+Status Config::set_sm_consolidation_step_max_frags(const std::string& value) {
+  uint32_t v;
+  RETURN_NOT_OK(utils::parse::convert(value, &v));
+  sm_params_.consolidation_step_max_frags_ = v;
+
+  return Status::Ok();
+}
+
+Status Config::set_sm_consolidation_step_size_ratio(const std::string& value) {
+  float v;
+  RETURN_NOT_OK(utils::parse::convert(value, &v));
+  sm_params_.consolidation_step_size_ratio_ = v;
+
+  return Status::Ok();
+}
+
 Status Config::set_sm_tile_cache_size(const std::string& value) {
   uint64_t v;
   RETURN_NOT_OK(utils::parse::convert(value, &v));
   sm_params_.tile_cache_size_ = v;
+
+  return Status::Ok();
+}
+
+Status Config::set_sm_consolidation_buffer_size(const std::string& value) {
+  uint64_t v;
+  RETURN_NOT_OK(utils::parse::convert(value, &v));
+  sm_params_.consolidation_buffer_size_ = v;
 
   return Status::Ok();
 }

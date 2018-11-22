@@ -69,22 +69,19 @@ Consolidator::~Consolidator() = default;
 /*               API              */
 /* ****************************** */
 
-// TODO: change constants to config params
-// TODO: - constants::consolidation_steps
-// TODO: - constants::consolidation_buffer_size
-// TODO: - constants::consolidation_step_min_frags
-// TODO: - constants::consolidation_step_max_frags
-// TODO: - constants::consolidation_step_size_ratio
-
 // TODO: Tests
 // TODO: Docs
+// TODO: Perf
 
-// TODO: add config here and check params
 Status Consolidator::consolidate(
     const char* array_name,
     EncryptionType encryption_type,
     const void* encryption_key,
-    uint32_t key_length) {
+    uint32_t key_length,
+    const Config* config) {
+  // Set config parameters
+  RETURN_NOT_OK(set_config(config));
+
   URI array_uri = URI(array_name);
   std::vector<FragmentInfo> to_consolidate;
   auto timestamp = utils::time::timestamp_now_ms();
@@ -127,7 +124,7 @@ Status Consolidator::consolidate(
     // Advance number of steps
     ++step;
 
-  } while (step < constants::consolidation_steps);
+  } while (step < config_.steps_);
 
   return Status::Ok();
 }
@@ -330,10 +327,10 @@ Status Consolidator::create_buffers(
   // Allocate space for each buffer
   bool error = false;
   for (unsigned int i = 0; i < *buffer_num; ++i) {
-    (*buffers)[i] = std::malloc(constants::consolidation_buffer_size);
+    (*buffers)[i] = std::malloc(config_.buffer_size_);
     if ((*buffers)[i] == nullptr)  // The loop should continue to
       error = true;                // allocate nullptr to each buffer
-    (*buffer_sizes)[i] = constants::consolidation_buffer_size;
+    (*buffer_sizes)[i] = config_.buffer_size_;
   }
 
   // Clean up upon error
@@ -437,21 +434,11 @@ Status Consolidator::compute_next_to_consolidate(
     std::vector<FragmentInfo>* to_consolidate) const {
   // Preparation
   to_consolidate->clear();
-  auto min = constants::consolidation_step_min_frags;
+  auto min = config_.min_frags_;
   min = (uint32_t)((min > fragments.size()) ? fragments.size() : min);
-  auto max = constants::consolidation_step_max_frags;
+  auto max = config_.max_frags_;
   max = (uint32_t)((max > fragments.size()) ? fragments.size() : max);
-  auto size_ratio = constants::consolidation_step_size_ratio;
-
-  // Sanity checks
-  if (min > max)
-    return Status::ConsolidationError(
-        "Cannot compute next fragments to consolidate; Minimum fragments "
-        "config parameter is larger than the maximum");
-  if (size_ratio > 1.0f || size_ratio < 0.0f)
-    return Status::ConsolidationError(
-        "Cannot compute next fragments to consolidate; Step size ratio config"
-        "parameter must be in [0.0, 1.0]");
+  auto size_ratio = config_.size_ratio_;
 
   // Trivial case - all fragments
   if (min == max && max == fragments.size() && size_ratio == 0.0f) {
@@ -591,6 +578,29 @@ void Consolidator::update_fragment_info(
       fragment_info->size() - to_consolidate.size() + 1);
 
   *fragment_info = std::move(updated_fragment_info);
+}
+
+Status Consolidator::set_config(const Config* config) {
+  if (config != nullptr) {
+    auto params = config->sm_params();
+    config_.steps_ = params.consolidation_steps_;
+    config_.buffer_size_ = params.consolidation_buffer_size_;
+    config_.size_ratio_ = params.consolidation_step_size_ratio_;
+    config_.min_frags_ = params.consolidation_step_min_frags_;
+    config_.max_frags_ = params.consolidation_step_max_frags_;
+  }
+
+  // Sanity checks
+  if (config_.min_frags_ > config_.max_frags_)
+    return Status::ConsolidationError(
+        "Invalid configuration; Minimum fragments config parameter is larger "
+        "than the maximum");
+  if (config_.size_ratio_ > 1.0f || config_.size_ratio_ < 0.0f)
+    return Status::ConsolidationError(
+        "Invalid configuration; Step size ratio config parameter must be in "
+        "[0.0, 1.0]");
+
+  return Status::Ok();
 }
 
 }  // namespace sm

@@ -51,6 +51,39 @@ class URI;
 class Consolidator {
  public:
   /* ********************************* */
+  /*           TYPE DEFINITIONS        */
+  /* ********************************* */
+
+  /** Consolidation configuration parameters. */
+  struct ConsolidationConfig {
+    /** Attribute buffer size. */
+    uint64_t buffer_size_;
+    /**
+     * Number of consolidation steps performed in a single
+     * consolidation invocation.
+     */
+    uint32_t steps_;
+    /** Minimum number of fragments to consolidate in a single step. */
+    uint32_t min_frags_;
+    /** Maximum number of fragments to consolidate in a single step. */
+    uint32_t max_frags_;
+    /**
+     * Minimum size ratio for two fragments to be considered for
+     * consolidation.
+     */
+    float size_ratio_;
+
+    /** Constructor. */
+    ConsolidationConfig() {
+      steps_ = constants::consolidation_steps;
+      buffer_size_ = constants::consolidation_buffer_size;
+      min_frags_ = constants::consolidation_step_min_frags;
+      max_frags_ = constants::consolidation_step_max_frags;
+      size_ratio_ = constants::consolidation_step_size_ratio;
+    }
+  };
+
+  /* ********************************* */
   /*     CONSTRUCTORS & DESTRUCTORS    */
   /* ********************************* */
 
@@ -76,18 +109,24 @@ class Consolidator {
    * @param encryption_key If the array is encrypted, the private encryption
    *    key. For unencrypted arrays, pass `nullptr`.
    * @param key_length The length in bytes of the encryption key.
+   * @param config Configuration parameters for the consolidation
+   *     (`nullptr` means default).
    * @return Status
    */
   Status consolidate(
       const char* array_name,
       EncryptionType encryption_type,
       const void* encryption_key,
-      uint32_t key_length);
+      uint32_t key_length,
+      const Config* config);
 
  private:
   /* ********************************* */
   /*        PRIVATE ATTRIBUTES         */
   /* ********************************* */
+
+  /** Connsolidation configuration parameters. */
+  ConsolidationConfig config_;
 
   /** The storage manager. */
   StorageManager* storage_manager_;
@@ -234,6 +273,9 @@ class Consolidator {
    * consolidated fragments.
    */
   Status rename_new_fragment_uri(URI* uri) const;
+
+  /** Checks and sets the input configuration parameters. */
+  Status set_config(const Config* config);
 
   /**
    * Sets the buffers to the query, using all the attributes in the
