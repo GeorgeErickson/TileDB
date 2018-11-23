@@ -64,45 +64,55 @@ namespace parse {
 /* ********************************* */
 
 Status convert(const std::string& str, int* value) {
-  if (!is_int(str))
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to int; Invalid argument"));
+  if (!is_int(str)) {
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to int; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
+  }
 
   try {
     *value = std::stoi(str);
   } catch (std::invalid_argument& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to int; Invalid argument"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to int; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   } catch (std::out_of_range& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to int; Value out of range"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to int; Value out of range";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   }
 
   return Status::Ok();
 }
 
 Status convert(const std::string& str, long* value) {
-  if (!is_int(str))
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to long; Invalid argument"));
+  if (!is_int(str)) {
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to long; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
+  }
 
   try {
     *value = std::stol(str);
   } catch (std::invalid_argument& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to long; Invalid argument"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to long; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   } catch (std::out_of_range& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to long; Value out of range"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to long; Value out of range";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   }
 
   return Status::Ok();
 }
 
 Status convert(const std::string& str, uint32_t* value) {
-  if (!is_uint(str))
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to uint32_t; Invalid argument"));
+  if (!is_uint(str)) {
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to uint32_t; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
+  }
 
   try {
     auto v = std::stoul(str);
@@ -110,29 +120,35 @@ Status convert(const std::string& str, uint32_t* value) {
       throw std::out_of_range("Cannot convert long to unsigned int");
     *value = (uint32_t)v;
   } catch (std::invalid_argument& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to uint32_t; Invalid argument"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to uint32_t; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   } catch (std::out_of_range& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to uint32_t; Value out of range"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to uint32_t; Value out of range";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   }
 
   return Status::Ok();
 }
 
 Status convert(const std::string& str, uint64_t* value) {
-  if (!is_uint(str))
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to uint64_t; Invalid argument"));
+  if (!is_uint(str)) {
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to uint64_t; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
+  }
 
   try {
     *value = std::stoull(str);
   } catch (std::invalid_argument& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to uint64_t; Invalid argument"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to uint64_t; Invalid argument";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   } catch (std::out_of_range& e) {
-    return LOG_STATUS(Status::UtilsError(
-        "Failed to convert string to uint64_t; Value out of range"));
+    auto errmsg = std::string("Failed to convert string '") + str +
+                  "' to uint64_t; Value out of range";
+    return LOG_STATUS(Status::UtilsError(errmsg));
   }
 
   return Status::Ok();
@@ -484,6 +500,19 @@ void expand_mbr(T* mbr, const T* coords, unsigned int dim_num) {
 }
 
 template <class T>
+void expand_mbr_with_mbr(T* mbr_a, const T* mbr_b, unsigned int dim_num) {
+  for (unsigned int i = 0; i < dim_num; ++i) {
+    // Update lower bound on dimension i
+    if (mbr_a[2 * i] > mbr_b[2 * i])
+      mbr_a[2 * i] = mbr_b[2 * i];
+
+    // Update upper bound on dimension i
+    if (mbr_a[2 * i + 1] < mbr_b[2 * i + 1])
+      mbr_a[2 * i + 1] = mbr_b[2 * i + 1];
+  }
+}
+
+template <class T>
 bool overlap(const T* a, const T* b, unsigned dim_num) {
   for (unsigned i = 0; i < dim_num; ++i) {
     if (a[2 * i] > b[2 * i + 1] || a[2 * i + 1] < b[2 * i])
@@ -622,6 +651,27 @@ template void expand_mbr<uint32_t>(
     uint32_t* mbr, const uint32_t* coords, unsigned int dim_num);
 template void expand_mbr<uint64_t>(
     uint64_t* mbr, const uint64_t* coords, unsigned int dim_num);
+
+template void expand_mbr_with_mbr<int>(
+    int* mbr_a, const int* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<int64_t>(
+    int64_t* mbr_a, const int64_t* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<float>(
+    float* mbr_a, const float* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<double>(
+    double* mbr_a, const double* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<int8_t>(
+    int8_t* mbr_a, const int8_t* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<uint8_t>(
+    uint8_t* mbr_a, const uint8_t* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<int16_t>(
+    int16_t* mbr_a, const int16_t* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<uint16_t>(
+    uint16_t* mbr_a, const uint16_t* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<uint32_t>(
+    uint32_t* mbr_a, const uint32_t* mbr_b, unsigned int dim_num);
+template void expand_mbr_with_mbr<uint64_t>(
+    uint64_t* mbr_a, const uint64_t* mbr_b, unsigned int dim_num);
 
 template bool overlap<int8_t>(
     const int8_t* a, const int8_t* b, unsigned dim_num);

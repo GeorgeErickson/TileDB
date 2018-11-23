@@ -312,27 +312,34 @@ class StorageManager {
    * Gets the fragment information for a given array at a particular
    * timestamp.
    *
-   * @param array_uri The array URI.
+   * @param array_schema The array schema.
    * @param timestamp The function will consider fragments created
    *     at or before this timestamp.
    * @param fragment_info The fragment information to be retrieved.
    *     The fragments are sorted in chronological creation order.
+   * @param encryption_key The encryption key in case the array is encrypted.
    * @return Status
    */
   Status get_fragment_info(
-      const URI& array_uri,
+      const ArraySchema* array_schema,
       uint64_t timestamp,
-      std::vector<FragmentInfo>* fragment_info) const;
+      const EncryptionKey& encryption_key,
+      std::vector<FragmentInfo>* fragment_info);
 
   /**
    * Gets the fragment info for a single fragment URI.
    *
+   * @param array_schema The array schema.
+   * @param encryption_key The encryption key.
    * @param fragment_uri The fragment URI.
    * @param fragment_info The fragment info to retrieve.
    * @return Status
    */
   Status get_fragment_info(
-      const URI& fragment_uri, FragmentInfo* fragment_info) const;
+      const ArraySchema* array_schema,
+      const EncryptionKey& encryption_key,
+      const URI& fragment_uri,
+      FragmentInfo* fragment_info);
 
   /**
    * Creates a TileDB group.

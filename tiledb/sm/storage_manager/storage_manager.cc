@@ -233,8 +233,6 @@ Status StorageManager::array_open_for_reads(
     std::vector<FragmentMetadata*>* fragment_metadata) {
   STATS_FUNC_IN(sm_array_open_for_reads);
 
-  std::cout << "SM::open_for_reads\n";
-
   // Open array without fragments
   auto open_array = (OpenArray*)nullptr;
   RETURN_NOT_OK_ELSE(
@@ -805,14 +803,15 @@ Status StorageManager::object_move(
 }
 
 Status StorageManager::get_fragment_info(
-    const URI& array_uri,
+    const ArraySchema* array_schema,
     uint64_t timestamp,
-    std::vector<FragmentInfo>* fragment_info) const {
+    const EncryptionKey& encryption_key,
+    std::vector<FragmentInfo>* fragment_info) {
   fragment_info->clear();
 
   // Get fragment URIs
   std::vector<URI> fragment_uris;
-  RETURN_NOT_OK(get_fragment_uris(array_uri, &fragment_uris));
+  RETURN_NOT_OK(get_fragment_uris(array_schema->array_uri(), &fragment_uris));
 
   // Check if the array is empty
   if (fragment_uris.empty())
@@ -822,18 +821,47 @@ Status StorageManager::get_fragment_info(
   std::vector<std::pair<uint64_t, URI>> sorted_fragment_uris;
   get_sorted_fragment_uris(fragment_uris, timestamp, &sorted_fragment_uris);
 
-  // Get fragment sizes
+  // Get the rest of fragment info
+  uint64_t domain_size = 2 * array_schema->coords_size();
   uint64_t size;
+  bool sparse, in_cache;
   for (const auto& uri : sorted_fragment_uris) {
+    // Determine if the fragment is sparse
+    URI coords_uri =
+        uri.second.join_path(constants::coords + constants::file_suffix);
+    RETURN_NOT_OK(vfs_->is_file(coords_uri, &sparse));
+
+    // Get fragment size
     RETURN_NOT_OK(vfs_->dir_size(uri.second, &size));
-    fragment_info->emplace_back(uri.second, uri.first, size);
+
+    // Get fragment non-empty domain
+    auto metadata =
+        new FragmentMetadata(array_schema, !sparse, uri.second, uri.first);
+    RETURN_NOT_OK_ELSE(
+        load_fragment_metadata(metadata, encryption_key, &in_cache),
+        delete metadata);
+    void* non_empty_domain = std::malloc(domain_size);
+    if (non_empty_domain == nullptr) {
+      delete metadata;
+      return LOG_STATUS(Status::StorageManagerError(
+          "Cannot get fragment info; Memory allocation failed"));
+    }
+    std::memcpy(non_empty_domain, metadata->non_empty_domain(), domain_size);
+    delete metadata;
+
+    // Push new fragment info
+    fragment_info->emplace_back(
+        uri.second, sparse, uri.first, size, non_empty_domain, domain_size);
   }
 
   return Status::Ok();
 }
 
 Status StorageManager::get_fragment_info(
-    const URI& fragment_uri, FragmentInfo* fragment_info) const {
+    const ArraySchema* array_schema,
+    const EncryptionKey& encryption_key,
+    const URI& fragment_uri,
+    FragmentInfo* fragment_info) {
   // Get fragment name
   std::string uri_str = fragment_uri.c_str();
   if (uri_str.back() == '/')
@@ -851,8 +879,29 @@ Status StorageManager::get_fragment_info(
   uint64_t size;
   RETURN_NOT_OK(vfs_->dir_size(fragment_uri, &size));
 
+  // Check if fragment is sparse
+  uint64_t domain_size = 2 * array_schema->coords_size();
+  bool sparse, in_cache;
+  URI coords_uri =
+      fragment_uri.join_path(constants::coords + constants::file_suffix);
+  RETURN_NOT_OK(vfs_->is_file(coords_uri, &sparse));
+
+  // Get fragment non-empty domain
+  auto metadata =
+      new FragmentMetadata(array_schema, !sparse, fragment_uri, timestamp);
+  RETURN_NOT_OK_ELSE(
+      load_fragment_metadata(metadata, encryption_key, &in_cache),
+      delete metadata);
+
   // Set fragment info
-  *fragment_info = FragmentInfo(fragment_uri, timestamp, size);
+  *fragment_info = FragmentInfo(
+      fragment_uri,
+      sparse,
+      timestamp,
+      size,
+      metadata->non_empty_domain(),
+      domain_size);
+  delete metadata;
 
   return Status::Ok();
 }

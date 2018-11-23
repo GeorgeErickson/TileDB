@@ -70,7 +70,7 @@ Consolidator::~Consolidator() = default;
 /* ****************************** */
 
 // TODO: Tests
-// TODO: Docs
+// TODO: Docs: (i) algorithm, (ii) new configs
 // TODO: Perf
 
 Status Consolidator::consolidate(
@@ -86,10 +86,23 @@ Status Consolidator::consolidate(
   std::vector<FragmentInfo> to_consolidate;
   auto timestamp = utils::time::timestamp_now_ms();
 
+  EncryptionKey enc_key;
+  RETURN_NOT_OK(enc_key.set_key(encryption_type, encryption_key, key_length));
+
+  // Get array schema
+  ObjectType object_type;
+  RETURN_NOT_OK(storage_manager_->object_type(array_uri, &object_type));
+  bool in_cache;
+  auto array_schema = (ArraySchema*)nullptr;
+  RETURN_NOT_OK(storage_manager_->load_array_schema(
+      array_uri, object_type, enc_key, &array_schema, &in_cache));
+
   // Get fragment info
   std::vector<FragmentInfo> fragment_info;
-  RETURN_NOT_OK(storage_manager_->get_fragment_info(
-      array_uri, timestamp, &fragment_info));
+  RETURN_NOT_OK_ELSE(
+      storage_manager_->get_fragment_info(
+          array_schema, timestamp, enc_key, &fragment_info),
+      delete array_schema);
 
   uint32_t step = 0;
   do {
@@ -98,25 +111,31 @@ Status Consolidator::consolidate(
       break;
 
     // Find the next fragments to be consolidated
-    RETURN_NOT_OK(compute_next_to_consolidate(fragment_info, &to_consolidate));
+    RETURN_NOT_OK_ELSE(
+        compute_next_to_consolidate(fragment_info, &to_consolidate),
+        delete array_schema);
 
-    // Check if there is nothing to consolidate
-    if (to_consolidate.empty())
-      return Status::Ok();
+    // Check if there is anything to consolidate
+    if (to_consolidate.size() <= 1)
+      break;
 
     // Consolidate the selected fragments
     URI new_fragment_uri;
-    RETURN_NOT_OK(consolidate(
-        array_uri,
-        to_consolidate,
-        encryption_type,
-        encryption_key,
-        key_length,
-        &new_fragment_uri));
+    RETURN_NOT_OK_ELSE(
+        consolidate(
+            array_uri,
+            to_consolidate,
+            encryption_type,
+            encryption_key,
+            key_length,
+            &new_fragment_uri),
+        delete array_schema);
 
     FragmentInfo new_fragment_info;
-    RETURN_NOT_OK(storage_manager_->get_fragment_info(
-        new_fragment_uri, &new_fragment_info));
+    RETURN_NOT_OK_ELSE(
+        storage_manager_->get_fragment_info(
+            array_schema, enc_key, new_fragment_uri, &new_fragment_info),
+        delete array_schema);
 
     // Update fragment info
     update_fragment_info(to_consolidate, new_fragment_info, &fragment_info);
@@ -125,6 +144,8 @@ Status Consolidator::consolidate(
     ++step;
 
   } while (step < config_.steps_);
+
+  delete array_schema;
 
   return Status::Ok();
 }
@@ -166,7 +187,7 @@ Status Consolidator::consolidate(
 
   // Create subarray
   void* subarray = nullptr;
-  auto st = create_subarray(&array_for_reads, &subarray);
+  auto st = create_subarray(&array_for_reads, to_consolidate, &subarray);
   if (!st.ok()) {
     array_for_reads.close();
     array_for_writes.close();
@@ -236,7 +257,10 @@ Status Consolidator::consolidate(
     storage_manager_->array_close_for_writes(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
     storage_manager_->array_xunlock(array_uri);
-    storage_manager_->vfs()->remove_dir(*new_fragment_uri);
+    bool is_dir;
+    auto st2 = storage_manager_->vfs()->is_dir(*new_fragment_uri, &is_dir);
+    if (is_dir)
+      storage_manager_->vfs()->remove_dir(*new_fragment_uri);
     return st;
   }
 
@@ -245,7 +269,10 @@ Status Consolidator::consolidate(
   if (!st.ok()) {
     storage_manager_->array_xunlock(array_uri);
     clean_up(subarray, buffer_num, buffers, buffer_sizes, query_r, query_w);
-    storage_manager_->vfs()->remove_dir(*new_fragment_uri);
+    bool is_dir;
+    auto st2 = storage_manager_->vfs()->is_dir(*new_fragment_uri, &is_dir);
+    if (is_dir)
+      storage_manager_->vfs()->remove_dir(*new_fragment_uri);
     return st;
   }
 
@@ -360,6 +387,7 @@ Status Consolidator::create_queries(
   if (!(*query_r)->array_schema()->is_kv())
     RETURN_NOT_OK((*query_r)->set_layout(Layout::GLOBAL_ORDER));
   RETURN_NOT_OK(set_query_buffers(*query_r, buffers, buffer_sizes));
+  RETURN_NOT_OK((*query_r)->set_subarray(subarray));
 
   // Get last fragment URI, which will be the URI of the consolidated fragment
   *new_fragment_uri = (*query_r)->last_fragment_uri();
@@ -375,9 +403,17 @@ Status Consolidator::create_queries(
   return Status::Ok();
 }
 
-Status Consolidator::create_subarray(Array* array, void** subarray) const {
+Status Consolidator::create_subarray(
+    Array* array,
+    const std::vector<FragmentInfo>& to_consolidate,
+    void** subarray) const {
+  // TODO: the subarray should be computed on whether all fragments
+  // TODO: are dense/sparse, not on whether the array is dense/sparse
+  // TODO: if all fragments are sparse, the layout should be GLOBAL
+
   auto array_schema = array->array_schema();
   assert(array_schema != nullptr);
+  assert(*subarray == nullptr);
 
   // Create subarray only for the dense case
   if (array_schema->dense()) {
@@ -386,16 +422,91 @@ Status Consolidator::create_subarray(Array* array, void** subarray) const {
       return LOG_STATUS(Status::ConsolidationError(
           "Cannot create subarray; Failed to allocate memory"));
 
-    bool is_empty;
-    RETURN_NOT_OK_ELSE(
-        storage_manager_->array_get_non_empty_domain(
-            array, *subarray, &is_empty),
-        std::free(subarray));
-    if (is_empty)
-      return LOG_STATUS(
-          Status::ConsolidationError("Cannot create subarray; empty array."));
+    compute_non_empty_domain(array_schema, to_consolidate, *subarray);
 
-    array_schema->domain()->expand_domain(*subarray);
+    // TODO: check here if subarray coincides with tiles to
+    // TODO: determine the write layout
+  }
+
+  return Status::Ok();
+}
+
+Status Consolidator::compute_non_empty_domain(
+    ArraySchema* array_schema,
+    const std::vector<FragmentInfo>& to_consolidate,
+    void* non_empty_domain) const {
+  // Compute buffer sizes
+  switch (array_schema->coords_type()) {
+    case Datatype::INT32:
+      return compute_non_empty_domain<int>(
+          array_schema, to_consolidate, static_cast<int*>(non_empty_domain));
+    case Datatype::INT64:
+      return compute_non_empty_domain<int64_t>(
+          array_schema,
+          to_consolidate,
+          static_cast<int64_t*>(non_empty_domain));
+    case Datatype::INT8:
+      return compute_non_empty_domain<int8_t>(
+          array_schema, to_consolidate, static_cast<int8_t*>(non_empty_domain));
+    case Datatype::UINT8:
+      return compute_non_empty_domain<uint8_t>(
+          array_schema,
+          to_consolidate,
+          static_cast<uint8_t*>(non_empty_domain));
+    case Datatype::INT16:
+      return compute_non_empty_domain<int16_t>(
+          array_schema,
+          to_consolidate,
+          static_cast<int16_t*>(non_empty_domain));
+    case Datatype::UINT16:
+      return compute_non_empty_domain<uint16_t>(
+          array_schema,
+          to_consolidate,
+          static_cast<uint16_t*>(non_empty_domain));
+    case Datatype::UINT32:
+      return compute_non_empty_domain<uint32_t>(
+          array_schema,
+          to_consolidate,
+          static_cast<uint32_t*>(non_empty_domain));
+    case Datatype::UINT64:
+      return compute_non_empty_domain<uint64_t>(
+          array_schema,
+          to_consolidate,
+          static_cast<uint64_t*>(non_empty_domain));
+    case Datatype::FLOAT32:
+      return compute_non_empty_domain<float>(
+          array_schema, to_consolidate, static_cast<float*>(non_empty_domain));
+    case Datatype::FLOAT64:
+      return compute_non_empty_domain<double>(
+          array_schema, to_consolidate, static_cast<double*>(non_empty_domain));
+    default:
+      return LOG_STATUS(
+          Status::StorageManagerError("Cannot compute non-empty domain "
+                                      "sizes; Invalid domain type"));
+  }
+
+  return Status::Ok();
+}
+
+template <class T>
+Status Consolidator::compute_non_empty_domain(
+    ArraySchema* array_schema,
+    const std::vector<FragmentInfo>& to_consolidate,
+    T* non_empty_domain) const {
+  auto dim_num = array_schema->dim_num();
+  auto domain_size = 2 * array_schema->coords_size();
+  assert(!to_consolidate.empty());
+
+  // Initialize subarray to the first fragment non-empty domain
+  std::memcpy(
+      non_empty_domain, to_consolidate[0].non_empty_domain_, domain_size);
+
+  // Initialize subarray
+  for (size_t i = 1; i < to_consolidate.size(); ++i) {
+    utils::geometry::expand_mbr_with_mbr<T>(
+        non_empty_domain,
+        (const T*)to_consolidate[i].non_empty_domain_,
+        dim_num);
   }
 
   return Status::Ok();
@@ -456,8 +567,17 @@ Status Consolidator::compute_next_to_consolidate(
   auto col_num = fragments.size();
   auto row_num = max;
   m.resize(row_num);
-  for (auto row : m)
+  for (auto& row : m)
     row.resize(col_num);
+
+  // TODO remove
+  for (auto f : fragments) {
+    std::cout << f.uri_.to_string() << ": " << f.fragment_size_ << " "
+              << ((f.sparse_) ? "sparse" : "dense") << " " << f.timestamp_
+              << "\n";
+    auto d = (uint64_t*)f.non_empty_domain_;
+    std::cout << d[0] << " " << d[1] << "\n";
+  }
 
   // Entry m[i][j] contains the collective size of fragments
   // fragments[j], ..., fragments[j+i]. If the size ratio
@@ -466,37 +586,52 @@ Status Consolidator::compute_next_to_consolidate(
   for (size_t i = 0; i < row_num; ++i) {
     for (size_t j = 0; j < col_num; ++j) {
       if (i == 0) {  // In the first row we store the sizes of `fragments`
-        m[i][j] = fragments[0].size_;
+        m[i][j] = fragments[j].fragment_size_;
       } else if (i + j >= col_num) {  // Non-valid entries
         m[i][j] = UINT64_MAX;
       } else {  // Every other row is computed using the previous row
-        float ratio = fragments[i + (j - 1)].size_ / fragments[i + j].size_;
+        auto ratio = (float)fragments[i + (j - 1)].fragment_size_ /
+                     fragments[i + j].fragment_size_;
         ratio = (ratio <= 1.0f) ? ratio : 1.0f / ratio;
         if (ratio >= size_ratio)
-          m[i][j] = m[i - 1][j] + fragments[i + j].size_;
+          m[i][j] = m[i - 1][j] + fragments[i + j].fragment_size_;
         else
           m[i][j] = UINT64_MAX;
       }
+      // TODO remove
+      std::cout << "m[" << i << "][" << j << "] = " << m[i][j] << "\n";
     }
   }
 
   // Choose the maximal set of fragments with cardinality in [min, max]
   // with the minimum size
-  uint64_t min_col = UINT64_MAX;
-  for (int row = row_num - 1; row >= (int)min; --row) {
-    min_col = UINT64_MAX;
-    for (auto col : m[row]) {
-      if (col < min_col)
-        min_col = col;
+  uint64_t min_size = UINT64_MAX;
+  size_t min_col = 0;
+  for (int i = row_num - 1; (i >= 0 && i >= (int)min - 1); --i) {
+    min_size = UINT64_MAX;
+    for (size_t j = 0; j < col_num; ++j) {
+      if (m[i][j] < min_size) {
+        min_size = m[i][j];
+        min_col = j;
+      }
     }
 
+    // TODO remove
+    std::cout << "min_col: " << min_col << "\n";
+    std::cout << "min_size: " << min_size << "\n";
+
     // Results found
-    if (min_col != UINT64_MAX) {
-      for (size_t i = min_col; i < min_col + row; ++i)
-        to_consolidate->emplace_back(fragments[i]);
+    if (min_size != UINT64_MAX) {
+      for (size_t f = min_col; f <= min_col + i; ++f)
+        to_consolidate->emplace_back(fragments[f]);
       break;
     }
   }
+
+  // TODO remove
+  for (const auto& f : *to_consolidate)
+    std::cout << f.uri_.to_string() << " " << f.fragment_size_ << " "
+              << f.timestamp_ << "\n";
 
   return Status::Ok();
 }
@@ -557,10 +692,10 @@ void Consolidator::update_fragment_info(
   std::vector<FragmentInfo> updated_fragment_info;
   bool new_fragment_added = false;
 
-  while (to_consolidate_it != to_consolidate.end() &&
-         fragment_it != fragment_info->end()) {
+  while (fragment_it != fragment_info->end()) {
     // No match - add the fragment info and advance `fragment_it`
-    if (fragment_it->uri_.to_string() != to_consolidate_it->uri_.to_string()) {
+    if (to_consolidate_it == to_consolidate.end() ||
+        fragment_it->uri_.to_string() != to_consolidate_it->uri_.to_string()) {
       updated_fragment_info.emplace_back(*fragment_it);
       ++fragment_it;
     } else {  // Match - add new fragment only once and advance both iterators
@@ -582,23 +717,23 @@ void Consolidator::update_fragment_info(
 
 Status Consolidator::set_config(const Config* config) {
   if (config != nullptr) {
-    auto params = config->sm_params();
-    config_.steps_ = params.consolidation_steps_;
-    config_.buffer_size_ = params.consolidation_buffer_size_;
-    config_.size_ratio_ = params.consolidation_step_size_ratio_;
-    config_.min_frags_ = params.consolidation_step_min_frags_;
-    config_.max_frags_ = params.consolidation_step_max_frags_;
+    auto params = config->consolidation_params();
+    config_.steps_ = params.steps_;
+    config_.buffer_size_ = params.buffer_size_;
+    config_.size_ratio_ = params.step_size_ratio_;
+    config_.min_frags_ = params.step_min_frags_;
+    config_.max_frags_ = params.step_max_frags_;
   }
 
   // Sanity checks
   if (config_.min_frags_ > config_.max_frags_)
-    return Status::ConsolidationError(
+    return LOG_STATUS(Status::ConsolidationError(
         "Invalid configuration; Minimum fragments config parameter is larger "
-        "than the maximum");
+        "than the maximum"));
   if (config_.size_ratio_ > 1.0f || config_.size_ratio_ < 0.0f)
-    return Status::ConsolidationError(
+    return LOG_STATUS(Status::ConsolidationError(
         "Invalid configuration; Step size ratio config parameter must be in "
-        "[0.0, 1.0]");
+        "[0.0, 1.0]"));
 
   return Status::Ok();
 }

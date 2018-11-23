@@ -50,6 +50,23 @@ class Config {
   /*         TYPE DEFINITIONS          */
   /* ********************************* */
 
+  /** Consolidation parameters. */
+  struct ConsolidationParams {
+    uint64_t buffer_size_;
+    uint32_t steps_;
+    uint32_t step_min_frags_;
+    uint32_t step_max_frags_;
+    float step_size_ratio_;
+
+    ConsolidationParams() {
+      steps_ = constants::consolidation_steps;
+      buffer_size_ = constants::consolidation_buffer_size;
+      step_min_frags_ = constants::consolidation_step_min_frags;
+      step_max_frags_ = constants::consolidation_step_max_frags;
+      step_size_ratio_ = constants::consolidation_step_size_ratio;
+    }
+  };
+
   /** Storage manager parameters. */
   struct SMParams {
     uint64_t array_schema_cache_size_;
@@ -64,11 +81,7 @@ class Config {
     bool check_coord_dups_;
     bool check_coord_oob_;
     bool check_global_order_;
-    uint64_t consolidation_buffer_size_;
-    uint32_t consolidation_steps_;
-    uint32_t consolidation_step_min_frags_;
-    uint32_t consolidation_step_max_frags_;
-    float consolidation_step_size_ratio_;
+    ConsolidationParams consolidation_params_;
 
     SMParams() {
       array_schema_cache_size_ = constants::array_schema_cache_size;
@@ -83,11 +96,6 @@ class Config {
       check_coord_dups_ = true;
       check_coord_oob_ = true;
       check_global_order_ = true;
-      consolidation_steps_ = constants::consolidation_steps;
-      consolidation_buffer_size_ = constants::consolidation_buffer_size;
-      consolidation_step_min_frags_ = constants::consolidation_step_min_frags;
-      consolidation_step_max_frags_ = constants::consolidation_step_max_frags;
-      consolidation_step_size_ratio_ = constants::consolidation_step_size_ratio;
     }
   };
 
@@ -189,6 +197,9 @@ class Config {
 
   /** Returns the storage manager parameters. */
   SMParams sm_params() const;
+
+  /** Returns the consolidation parameters. */
+  ConsolidationParams consolidation_params() const;
 
   /** Returns the VFS parameters. */
   VFSParams vfs_params() const;
@@ -436,22 +447,22 @@ class Config {
   Status set_sm_num_tbb_threads(const std::string& value);
 
   /** Sets the number of consolidation steps.*/
-  Status set_sm_consolidation_steps(const std::string& value);
+  Status set_consolidation_steps(const std::string& value);
 
   /** Sets the minimum number of fragments to consolidate in a step.*/
-  Status set_sm_consolidation_step_min_frags(const std::string& value);
+  Status set_consolidation_step_min_frags(const std::string& value);
 
   /** Sets the maximum number of fragments to consolidate in a step.*/
-  Status set_sm_consolidation_step_max_frags(const std::string& value);
+  Status set_consolidation_step_max_frags(const std::string& value);
 
   /** Sets the size ratio requirement for two "adjacent" fragments in a step. */
-  Status set_sm_consolidation_step_size_ratio(const std::string& value);
+  Status set_consolidation_step_size_ratio(const std::string& value);
+
+  /** Sets the consolidation buffer size, properly parsing the input value. */
+  Status set_consolidation_buffer_size(const std::string& value);
 
   /** Sets the tile cache size, properly parsing the input value. */
   Status set_sm_tile_cache_size(const std::string& value);
-
-  /** Sets the consolidation buffer size, properly parsing the input value. */
-  Status set_sm_consolidation_buffer_size(const std::string& value);
 
   /** Sets the number of VFS threads. */
   Status set_vfs_num_threads(const std::string& value);

@@ -43,19 +43,87 @@ namespace sm {
 struct FragmentInfo {
   /** The fragment URI. */
   URI uri_;
+  /** True if the fragment is sparse, and false if it is dense. */
+  bool sparse_;
   /** The creation timestamp of the fragment. */
   uint64_t timestamp_;
   /** The size of the entire fragment directory. */
-  uint64_t size_;
+  uint64_t fragment_size_;
+  /** The fragment's non-empty domain. */
+  void* non_empty_domain_;
+  /** The size in bytes of non_empty_domain_.  */
+  uint64_t non_empty_domain_size_;
 
   /** Constructor. */
-  FragmentInfo() = default;
+  FragmentInfo() {
+    non_empty_domain_ = nullptr;
+  }
 
   /** Constructor. */
-  FragmentInfo(const URI& uri, uint64_t timestamp, uint64_t size)
+  FragmentInfo(
+      const URI& uri,
+      bool sparse,
+      uint64_t timestamp,
+      uint64_t fragment_size,
+      const void* non_empty_domain,
+      uint64_t non_empty_domain_size)
       : uri_(uri)
+      , sparse_(sparse)
       , timestamp_(timestamp)
-      , size_(size) {
+      , fragment_size_(fragment_size)
+      , non_empty_domain_size_(non_empty_domain_size) {
+    non_empty_domain_ = std::malloc(non_empty_domain_size);
+    std::memcpy(non_empty_domain_, non_empty_domain, non_empty_domain_size);
+  }
+
+  /** Copy constructor. */
+  FragmentInfo(const FragmentInfo& info) {
+    uri_ = info.uri_;
+    sparse_ = info.sparse_;
+    timestamp_ = info.timestamp_;
+    fragment_size_ = info.fragment_size_;
+    non_empty_domain_size_ = info.non_empty_domain_size_;
+    non_empty_domain_ = std::malloc(non_empty_domain_size_);
+    std::memcpy(
+        non_empty_domain_, info.non_empty_domain_, non_empty_domain_size_);
+  }
+
+  /** Move constructor. */
+  FragmentInfo(FragmentInfo&& info) {
+    *this = info;
+    std::free(info.non_empty_domain_);
+    info.non_empty_domain_ = nullptr;
+  }
+
+  /** Destructor. */
+  ~FragmentInfo() {
+    std::free(non_empty_domain_);
+  }
+
+  /** Copy assignment operator. */
+  FragmentInfo& operator=(const FragmentInfo& info) {
+    if (&info != this) {
+      uri_ = info.uri_;
+      sparse_ = info.sparse_;
+      timestamp_ = info.timestamp_;
+      fragment_size_ = info.fragment_size_;
+      non_empty_domain_size_ = info.non_empty_domain_size_;
+      std::free(non_empty_domain_);
+      non_empty_domain_ = std::malloc(non_empty_domain_size_);
+      std::memcpy(
+          non_empty_domain_, info.non_empty_domain_, non_empty_domain_size_);
+    }
+    return *this;
+  }
+
+  /** Move assignment operator. */
+  FragmentInfo& operator=(FragmentInfo&& info) {
+    if (&info != this) {
+      *this = info;
+      std::free(info.non_empty_domain_);
+      info.non_empty_domain_ = nullptr;
+    }
+    return *this;
   }
 };
 

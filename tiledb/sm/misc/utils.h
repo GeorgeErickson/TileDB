@@ -162,6 +162,18 @@ bool coords_in_rect(const T* coords, const T* rect, unsigned int dim_num);
 template <class T>
 void expand_mbr(T* mbr, const T* coords, unsigned int dim_num);
 
+/**
+ * Expands `mbr_a` so that it encompasses `mbr_b`.
+ *
+ * @tparam T The type of the MBR and coordinates.
+ * @param mbr_a The MBR to be expanded.
+ * @param mbr_b The MBR used to expnad `mbr_a`.
+ * @param dim_num The number of dimensions of the MBRs.
+ * @return void
+ */
+template <class T>
+void expand_mbr_with_mbr(T* mbr_a, const T* mbr_b, unsigned int dim_num);
+
 /** Returns *true* if hyper-rectangles `a` overlaps with `b`. */
 template <class T>
 bool overlap(const T* a, const T* b, unsigned dim_num);

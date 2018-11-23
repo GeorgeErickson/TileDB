@@ -221,8 +221,48 @@ class Consolidator {
       uint64_t* buffer_sizes,
       URI* new_fragment_uri);
 
-  /** Creates the subarray that should represent the entire array domain. */
-  Status create_subarray(Array* array, void** subarray) const;
+  /**
+   * Creates the subarray that should be (i) the union of all
+   * fragments to consolidate if there is even a single fragment in
+   * `to_consolidate`, or (ii) `nullptr` (representing the entire domain)
+   * if all fragments to consolidate are sparse.
+   */
+  Status create_subarray(
+      Array* array,
+      const std::vector<FragmentInfo>& to_consolidate,
+      void** subarray) const;
+
+  /**
+   * Computes the non-empty domain of the input fragments to be consolidated.
+   * Note that the input contains at least one dense fragment. The computed
+   * non-empty domain is the union of all fragments to consolidate.
+   *
+   * @param array_schema The array schema.
+   * @param to_consolidate The fragments to consolidate.
+   * @param non_empty_domain The non-empty domain to compute.
+   * @return Status
+   */
+  Status compute_non_empty_domain(
+      ArraySchema* array_schema,
+      const std::vector<FragmentInfo>& to_consolidate,
+      void* non_empty_domain) const;
+
+  /**
+   * Computes the non-empty domain of the input fragments to be consolidated.
+   * Note that the input contains at least one dense fragment. The computed
+   * non-empty domain is the union of all fragments to consolidate.
+   *
+   * @tparam T The domain type.
+   * @param array_schema The array schema.
+   * @param to_consolidate The fragments to consolidate.
+   * @param non_empty_domain The non-empty domain to compute.
+   * @return Status
+   */
+  template <class T>
+  Status compute_non_empty_domain(
+      ArraySchema* array_schema,
+      const std::vector<FragmentInfo>& to_consolidate,
+      T* non_empty_domain) const;
 
   /**
    * Deletes the fragment metadata files of the old fragments that
