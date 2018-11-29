@@ -187,7 +187,9 @@ Status Consolidator::consolidate(
 
   // Create subarray
   void* subarray = nullptr;
-  auto st = create_subarray(&array_for_reads, to_consolidate, &subarray);
+  Layout layout;
+  auto st = compute_subarray_and_layout(
+      &array_for_reads, to_consolidate, &subarray, &layout);
   if (!st.ok()) {
     array_for_reads.close();
     array_for_writes.close();
@@ -212,6 +214,7 @@ Status Consolidator::consolidate(
       &query_r,
       &query_w,
       subarray,
+      layout,
       &array_for_reads,
       &array_for_writes,
       buffers,
@@ -377,6 +380,7 @@ Status Consolidator::create_queries(
     Query** query_r,
     Query** query_w,
     void* subarray,
+    Layout layout,
     Array* array_for_reads,
     Array* array_for_writes,
     void** buffers,
@@ -385,7 +389,7 @@ Status Consolidator::create_queries(
   // Create read query
   *query_r = new Query(storage_manager_, array_for_reads);
   if (!(*query_r)->array_schema()->is_kv())
-    RETURN_NOT_OK((*query_r)->set_layout(Layout::GLOBAL_ORDER));
+    RETURN_NOT_OK((*query_r)->set_layout(layout));
   RETURN_NOT_OK(set_query_buffers(*query_r, buffers, buffer_sizes));
   RETURN_NOT_OK((*query_r)->set_subarray(subarray));
 
@@ -395,18 +399,19 @@ Status Consolidator::create_queries(
 
   // Create write query
   *query_w = new Query(storage_manager_, array_for_writes, *new_fragment_uri);
-  if (!(*query_w)->array_schema()->is_kv())
-    RETURN_NOT_OK((*query_w)->set_layout(Layout::GLOBAL_ORDER));
+  if (!(*query_r)->array_schema()->is_kv())
+    RETURN_NOT_OK((*query_w)->set_layout(layout));
   RETURN_NOT_OK((*query_w)->set_subarray(subarray));
   RETURN_NOT_OK(set_query_buffers(*query_w, buffers, buffer_sizes));
 
   return Status::Ok();
 }
 
-Status Consolidator::create_subarray(
+Status Consolidator::compute_subarray_and_layout(
     Array* array,
     const std::vector<FragmentInfo>& to_consolidate,
-    void** subarray) const {
+    void** subarray,
+    Layout* layout) const {
   // TODO: the subarray should be computed on whether all fragments
   // TODO: are dense/sparse, not on whether the array is dense/sparse
   // TODO: if all fragments are sparse, the layout should be GLOBAL
@@ -422,10 +427,13 @@ Status Consolidator::create_subarray(
       return LOG_STATUS(Status::ConsolidationError(
           "Cannot create subarray; Failed to allocate memory"));
 
-    compute_non_empty_domain(array_schema, to_consolidate, *subarray);
-
-    // TODO: check here if subarray coincides with tiles to
-    // TODO: determine the write layout
+    bool coincides = false;
+    compute_non_empty_domain(
+        array_schema, to_consolidate, *subarray, &coincides);
+    *layout = coincides ? Layout::GLOBAL_ORDER : array_schema->cell_order();
+  } else {  // Sparse array
+    *subarray = nullptr;
+    *layout = Layout::GLOBAL_ORDER;
   }
 
   return Status::Ok();
@@ -434,51 +442,58 @@ Status Consolidator::create_subarray(
 Status Consolidator::compute_non_empty_domain(
     ArraySchema* array_schema,
     const std::vector<FragmentInfo>& to_consolidate,
-    void* non_empty_domain) const {
+    void* non_empty_domain,
+    bool* coincides) const {
   // Compute buffer sizes
   switch (array_schema->coords_type()) {
     case Datatype::INT32:
       return compute_non_empty_domain<int>(
-          array_schema, to_consolidate, static_cast<int*>(non_empty_domain));
+          array_schema,
+          to_consolidate,
+          static_cast<int*>(non_empty_domain),
+          coincides);
     case Datatype::INT64:
       return compute_non_empty_domain<int64_t>(
           array_schema,
           to_consolidate,
-          static_cast<int64_t*>(non_empty_domain));
+          static_cast<int64_t*>(non_empty_domain),
+          coincides);
     case Datatype::INT8:
       return compute_non_empty_domain<int8_t>(
-          array_schema, to_consolidate, static_cast<int8_t*>(non_empty_domain));
+          array_schema,
+          to_consolidate,
+          static_cast<int8_t*>(non_empty_domain),
+          coincides);
     case Datatype::UINT8:
       return compute_non_empty_domain<uint8_t>(
           array_schema,
           to_consolidate,
-          static_cast<uint8_t*>(non_empty_domain));
+          static_cast<uint8_t*>(non_empty_domain),
+          coincides);
     case Datatype::INT16:
       return compute_non_empty_domain<int16_t>(
           array_schema,
           to_consolidate,
-          static_cast<int16_t*>(non_empty_domain));
+          static_cast<int16_t*>(non_empty_domain),
+          coincides);
     case Datatype::UINT16:
       return compute_non_empty_domain<uint16_t>(
           array_schema,
           to_consolidate,
-          static_cast<uint16_t*>(non_empty_domain));
+          static_cast<uint16_t*>(non_empty_domain),
+          coincides);
     case Datatype::UINT32:
       return compute_non_empty_domain<uint32_t>(
           array_schema,
           to_consolidate,
-          static_cast<uint32_t*>(non_empty_domain));
+          static_cast<uint32_t*>(non_empty_domain),
+          coincides);
     case Datatype::UINT64:
       return compute_non_empty_domain<uint64_t>(
           array_schema,
           to_consolidate,
-          static_cast<uint64_t*>(non_empty_domain));
-    case Datatype::FLOAT32:
-      return compute_non_empty_domain<float>(
-          array_schema, to_consolidate, static_cast<float*>(non_empty_domain));
-    case Datatype::FLOAT64:
-      return compute_non_empty_domain<double>(
-          array_schema, to_consolidate, static_cast<double*>(non_empty_domain));
+          static_cast<uint64_t*>(non_empty_domain),
+          coincides);
     default:
       return LOG_STATUS(
           Status::StorageManagerError("Cannot compute non-empty domain "
@@ -492,9 +507,12 @@ template <class T>
 Status Consolidator::compute_non_empty_domain(
     ArraySchema* array_schema,
     const std::vector<FragmentInfo>& to_consolidate,
-    T* non_empty_domain) const {
+    T* non_empty_domain,
+    bool* coincides) const {
   auto dim_num = array_schema->dim_num();
   auto domain_size = 2 * array_schema->coords_size();
+  auto domain = (T*)array_schema->domain()->domain();
+  auto tile_extents = (T*)array_schema->domain()->tile_extents();
   assert(!to_consolidate.empty());
 
   // Initialize subarray to the first fragment non-empty domain
@@ -507,6 +525,18 @@ Status Consolidator::compute_non_empty_domain(
         non_empty_domain,
         (const T*)to_consolidate[i].non_empty_domain_,
         dim_num);
+  }
+
+  *coincides = true;
+  for (unsigned i = 0; i < dim_num; ++i) {
+    assert(
+        (non_empty_domain[2 * i + 1] - domain[2 * i]) !=
+        std::numeric_limits<T>::max());
+    if (((non_empty_domain[2 * i] - domain[2 * i]) % tile_extents[i]) ||
+        (non_empty_domain[2 * i + 1] - domain[2 * i] + 1) % tile_extents[i]) {
+      *coincides = false;
+      break;
+    }
   }
 
   return Status::Ok();

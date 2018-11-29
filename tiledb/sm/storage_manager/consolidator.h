@@ -201,7 +201,9 @@ class Consolidator {
    *
    * @param query_r This query reads from the fragments to be consolidated.
    * @param query_w This query writes to the new consolidated fragment.
-   * @param write_subarray The subarray to write into.
+   * @param subarray The subarray to read from (the fragments to consolidate)
+   *     and write to (the new fragment).
+   * @param layout The layout to read from and write to.
    * @param array_for_reads The opened array for reading the fragments
    *     to be consolidated.
    * @param array_for_writes The opened array for writing the
@@ -214,7 +216,8 @@ class Consolidator {
   Status create_queries(
       Query** query_r,
       Query** query_w,
-      void* write_subarray,
+      void* subarray,
+      Layout layout,
       Array* array_for_reads,
       Array* array_for_writes,
       void** buffers,
@@ -222,15 +225,17 @@ class Consolidator {
       URI* new_fragment_uri);
 
   /**
-   * Creates the subarray that should be (i) the union of all
-   * fragments to consolidate if there is even a single fragment in
-   * `to_consolidate`, or (ii) `nullptr` (representing the entire domain)
-   * if all fragments to consolidate are sparse.
+   * Computes the subarray issued as a read and write query during
+   * consolidation, as well as the layout the query should be issued
+   * in. The decision is taken based on whether the input fragments
+   * to consolidate are dense or sparse, as well as their non-empty
+   * domains.
    */
-  Status create_subarray(
+  Status compute_subarray_and_layout(
       Array* array,
       const std::vector<FragmentInfo>& to_consolidate,
-      void** subarray) const;
+      void** subarray,
+      Layout* layout) const;
 
   /**
    * Computes the non-empty domain of the input fragments to be consolidated.
@@ -240,12 +245,15 @@ class Consolidator {
    * @param array_schema The array schema.
    * @param to_consolidate The fragments to consolidate.
    * @param non_empty_domain The non-empty domain to compute.
+   * @param coincides This is set to `true` by the function if the
+   *     computed non-empty domain coincides with the array space tiles.
    * @return Status
    */
   Status compute_non_empty_domain(
       ArraySchema* array_schema,
       const std::vector<FragmentInfo>& to_consolidate,
-      void* non_empty_domain) const;
+      void* non_empty_domain,
+      bool* coincides) const;
 
   /**
    * Computes the non-empty domain of the input fragments to be consolidated.
@@ -256,13 +264,16 @@ class Consolidator {
    * @param array_schema The array schema.
    * @param to_consolidate The fragments to consolidate.
    * @param non_empty_domain The non-empty domain to compute.
+   * @param coincides This is set to `true` by the function if the
+   *     computed non-empty domain coincides with the array space tiles.
    * @return Status
    */
   template <class T>
   Status compute_non_empty_domain(
       ArraySchema* array_schema,
       const std::vector<FragmentInfo>& to_consolidate,
-      T* non_empty_domain) const;
+      T* non_empty_domain,
+      bool* coincides) const;
 
   /**
    * Deletes the fragment metadata files of the old fragments that
