@@ -199,29 +199,29 @@ class Consolidator {
    * the number of fragments to be consolidated and the URI of the
    * new fragment to be created.
    *
-   * @param query_r This query reads from the fragments to be consolidated.
-   * @param query_w This query writes to the new consolidated fragment.
-   * @param subarray The subarray to read from (the fragments to consolidate)
-   *     and write to (the new fragment).
-   * @param layout The layout to read from and write to.
    * @param array_for_reads The opened array for reading the fragments
    *     to be consolidated.
    * @param array_for_writes The opened array for writing the
    *     consolidated fragments.
+   * @param subarray The subarray to read from (the fragments to consolidate)
+   *     and write to (the new fragment).
+   * @param layout The layout to read from and write to.
    * @param buffers The buffers to be passed in the queries.
    * @param buffer_sizes The corresponding buffer sizes.
+   * @param query_r This query reads from the fragments to be consolidated.
+   * @param query_w This query writes to the new consolidated fragment.
    * @param new_fragment_uri The URI of the new fragment to be created.
    * @return Status
    */
   Status create_queries(
-      Query** query_r,
-      Query** query_w,
-      void* subarray,
-      Layout layout,
       Array* array_for_reads,
       Array* array_for_writes,
+      void* subarray,
+      Layout layout,
       void** buffers,
       uint64_t* buffer_sizes,
+      Query** query_r,
+      Query** query_w,
       URI* new_fragment_uri);
 
   /**

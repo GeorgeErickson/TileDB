@@ -190,7 +190,7 @@ const std::string group_filename = "__tiledb_group.tdb";
 const uint64_t consolidation_buffer_size = 50000000;
 
 /** Number of steps in the consolidation algorithm. */
-const uint32_t consolidation_steps = 1;
+const uint32_t consolidation_steps = std::numeric_limits<unsigned>::max();
 
 /** Minimum number of fragments to consolidate per step. */
 const uint32_t consolidation_step_min_frags = UINT32_MAX;

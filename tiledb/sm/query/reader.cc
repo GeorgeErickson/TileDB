@@ -1631,6 +1631,7 @@ Status Reader::handle_coords_in_dense_cell_range(
       // Coords unary range
       overlapping_cell_ranges->emplace_back(
           (*coords_it)->tile_, (*coords_it)->pos_, (*coords_it)->pos_);
+
       // Update start
       *start = *coords_pos + 1;
 

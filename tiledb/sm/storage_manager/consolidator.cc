@@ -211,14 +211,14 @@ Status Consolidator::consolidate(
   auto query_r = (Query*)nullptr;
   auto query_w = (Query*)nullptr;
   st = create_queries(
-      &query_r,
-      &query_w,
-      subarray,
-      layout,
       &array_for_reads,
       &array_for_writes,
+      subarray,
+      layout,
       buffers,
       buffer_sizes,
+      &query_r,
+      &query_w,
       new_fragment_uri);
   if (!st.ok()) {
     storage_manager_->array_close_for_reads(array_uri);
@@ -377,14 +377,14 @@ Status Consolidator::create_buffers(
 }
 
 Status Consolidator::create_queries(
-    Query** query_r,
-    Query** query_w,
-    void* subarray,
-    Layout layout,
     Array* array_for_reads,
     Array* array_for_writes,
+    void* subarray,
+    Layout layout,
     void** buffers,
     uint64_t* buffer_sizes,
+    Query** query_r,
+    Query** query_w,
     URI* new_fragment_uri) {
   // Create read query
   *query_r = new Query(storage_manager_, array_for_reads);
@@ -706,7 +706,7 @@ Status Consolidator::set_query_buffers(
       bid += 2;
     }
   }
-  if (!dense)
+  if (!dense) // TODO: or if force-sparse
     RETURN_NOT_OK(
         query->set_buffer(constants::coords, buffers[bid], &buffer_sizes[bid]));
 

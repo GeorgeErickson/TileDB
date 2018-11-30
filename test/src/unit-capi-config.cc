@@ -197,7 +197,7 @@ void check_save_to_file() {
   ss << "sm.consolidation.step_max_frags 4294967295\n";
   ss << "sm.consolidation.step_min_frags 4294967295\n";
   ss << "sm.consolidation.step_size_ratio 0\n";
-  ss << "sm.consolidation.steps 1\n";
+  ss << "sm.consolidation.steps 4294967295\n";
   ss << "sm.dedup_coords false\n";
   ss << "sm.enable_signal_handlers true\n";
   ss << "sm.fragment_metadata_cache_size 10000000\n";
@@ -378,7 +378,7 @@ TEST_CASE("C API: Test config iter", "[capi], [config]") {
   all_param_values["sm.num_reader_threads"] = "1";
   all_param_values["sm.num_writer_threads"] = "1";
   all_param_values["sm.num_tbb_threads"] = "-1";
-  all_param_values["sm.consolidation.steps"] = "1";
+  all_param_values["sm.consolidation.steps"] = "4294967295";
   all_param_values["sm.consolidation.step_min_frags"] = "4294967295";
   all_param_values["sm.consolidation.step_max_frags"] = "4294967295";
   all_param_values["sm.consolidation.buffer_size"] = "50000000";
