@@ -1367,19 +1367,10 @@ void ConsolidationFx::read_dense_vector_mixed() {
   rc = tiledb_query_get_status(ctx_, query, &status);
   CHECK(status == TILEDB_COMPLETED);
 
-
-  for(int i=0; i<410; ++i) {
-      if(a[i] != i)
-        std::cout << "DEBUG: " << i << " " << a[i] << "\n";
-  }
-
   // Check buffers
   CHECK(sizeof(c_a) == a_size);
-  for(int i=0; i<410; ++i) {
-    if(a[i] != c_a[i])
-      std::cout << "i: " << i << "\n";
-      CHECK(a[i] == c_a[i]);
-  }
+  for(int i=0; i<410; ++i)
+    CHECK(a[i] == c_a[i]);
 
   // Close array
   rc = tiledb_array_close(ctx_, array);
@@ -2936,7 +2927,7 @@ TEST_CASE_METHOD(
   REQUIRE(error == nullptr);
 
   // Configure test
-  int rc = tiledb_config_set(config, "sm.consolidation.steps", "2", &error);
+  int rc = tiledb_config_set(config, "sm.consolidation.steps", "1", &error);
   REQUIRE(rc == TILEDB_OK);
   REQUIRE(error == nullptr);
   rc =
@@ -2953,18 +2944,18 @@ TEST_CASE_METHOD(
   REQUIRE(error == nullptr);
 
   // Consolidate
-// TODO: rc = tiledb_array_consolidate(ctx_, DENSE_VECTOR_NAME, config);
-// TODO: CHECK(rc == TILEDB_OK);
+  rc = tiledb_array_consolidate(ctx_, DENSE_VECTOR_NAME, config);
+  CHECK(rc == TILEDB_OK);
 
   // Check correctness
-// TODO:  read_dense_vector_mixed();
+  read_dense_vector_mixed();
 
   // Check number of fragments
   get_dir_num_struct data = {ctx_, vfs_, 0};
   rc = tiledb_vfs_ls(ctx_, vfs_, DENSE_VECTOR_NAME, &get_dir_num, &data);
   CHECK(rc == TILEDB_OK);
-  CHECK(data.dir_num == 4); // TODO
+  CHECK(data.dir_num == 3);
 
   tiledb_config_free(&config);
-// TODO: remove_dense_vector();
+  remove_dense_vector();
 }

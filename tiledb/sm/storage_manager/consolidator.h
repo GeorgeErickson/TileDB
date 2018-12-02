@@ -183,6 +183,8 @@ class Consolidator {
    * created.
    *
    * @param array_schema The array schema.
+   * @param sparse_mode This indicates whether a dense array must be opened
+   *     in special sparse mode. This is ignored for sparse arrays.
    * @param buffers The buffers to be created.
    * @param buffer_sizes The corresponding buffer sizes.
    * @param buffer_num The number of buffers to be retrieved.
@@ -190,6 +192,7 @@ class Consolidator {
    */
   Status create_buffers(
       const ArraySchema* array_schema,
+      bool sparse_mode,
       void*** buffers,
       uint64_t** buffer_sizes,
       unsigned int* buffer_num);
@@ -203,6 +206,8 @@ class Consolidator {
    *     to be consolidated.
    * @param array_for_writes The opened array for writing the
    *     consolidated fragments.
+   * @param sparse_mode This indicates whether a dense array must be opened
+   *     in special sparse mode. This is ignored for sparse arrays.
    * @param subarray The subarray to read from (the fragments to consolidate)
    *     and write to (the new fragment).
    * @param layout The layout to read from and write to.
@@ -216,6 +221,7 @@ class Consolidator {
   Status create_queries(
       Array* array_for_reads,
       Array* array_for_writes,
+      bool sparse_mode,
       void* subarray,
       Layout layout,
       void** buffers,
@@ -230,12 +236,20 @@ class Consolidator {
    * in. The decision is taken based on whether the input fragments
    * to consolidate are dense or sparse, as well as their non-empty
    * domains.
+   *
+   * @param array The input array.
+   * @param to_consolidate The fragments to consolidate.
+   * @param subarray The subarray to compute.
+   * @param layout The layout to compute.
+   * @param all_sparse This is set to `true` if all fragments to
+   *     consolidate are sparse.
    */
   Status compute_subarray_and_layout(
       Array* array,
       const std::vector<FragmentInfo>& to_consolidate,
       void** subarray,
-      Layout* layout) const;
+      Layout* layout,
+      bool* all_sparse) const;
 
   /**
    * Computes the non-empty domain of the input fragments to be consolidated.
@@ -333,9 +347,15 @@ class Consolidator {
    * query schema. There is a 1-1 correspondence between the input `buffers`
    * and the attributes in the schema, considering also the coordinates
    * if the array is sparse in the end.
+   *
+   * @param query The query to set the buffers to.
+   * @param sparse_mode This indicates whether a dense array must be opened
+   *     in special sparse mode. This is ignored for sparse arrays.
+   * @param The buffers to set.
+   * @param buffer_sizes The buffer sizes.
    */
   Status set_query_buffers(
-      Query* query, void** buffers, uint64_t* buffer_sizes) const;
+      Query* query, bool sparse_mode, void** buffers, uint64_t* buffer_sizes) const;
 
   /**
    * Updates the `fragment_info` by removing `to_consolidate` and

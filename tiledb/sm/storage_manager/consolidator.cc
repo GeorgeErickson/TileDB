@@ -188,8 +188,9 @@ Status Consolidator::consolidate(
   // Create subarray
   void* subarray = nullptr;
   Layout layout;
+  bool all_sparse;
   auto st = compute_subarray_and_layout(
-      &array_for_reads, to_consolidate, &subarray, &layout);
+      &array_for_reads, to_consolidate, &subarray, &layout, &all_sparse);
   if (!st.ok()) {
     array_for_reads.close();
     array_for_writes.close();
@@ -200,7 +201,7 @@ Status Consolidator::consolidate(
   void** buffers;
   uint64_t* buffer_sizes;
   unsigned int buffer_num;
-  st = create_buffers(array_schema, &buffers, &buffer_sizes, &buffer_num);
+  st = create_buffers(array_schema, all_sparse, &buffers, &buffer_sizes, &buffer_num);
   if (!st.ok()) {
     array_for_reads.close();
     array_for_writes.close();
@@ -213,6 +214,7 @@ Status Consolidator::consolidate(
   st = create_queries(
       &array_for_reads,
       &array_for_writes,
+      all_sparse,
       subarray,
       layout,
       buffers,
@@ -329,18 +331,19 @@ void Consolidator::clean_up(
 
 Status Consolidator::create_buffers(
     const ArraySchema* array_schema,
+    bool sparse_mode,
     void*** buffers,
     uint64_t** buffer_sizes,
     unsigned int* buffer_num) {
   // For easy reference
   auto attribute_num = array_schema->attribute_num();
-  auto dense = array_schema->dense();
+  auto sparse = !array_schema->dense() || sparse_mode;
 
   // Calculate number of buffers
   *buffer_num = 0;
   for (unsigned int i = 0; i < attribute_num; ++i)
     *buffer_num += (array_schema->attributes()[i]->var_size()) ? 2 : 1;
-  *buffer_num += (dense) ? 0 : 1;
+  *buffer_num += (sparse) ? 1 : 0;
 
   // Create buffers
   *buffers = (void**)std::malloc(*buffer_num * sizeof(void*));
@@ -379,6 +382,7 @@ Status Consolidator::create_buffers(
 Status Consolidator::create_queries(
     Array* array_for_reads,
     Array* array_for_writes,
+    bool sparse_mode,
     void* subarray,
     Layout layout,
     void** buffers,
@@ -390,8 +394,11 @@ Status Consolidator::create_queries(
   *query_r = new Query(storage_manager_, array_for_reads);
   if (!(*query_r)->array_schema()->is_kv())
     RETURN_NOT_OK((*query_r)->set_layout(layout));
-  RETURN_NOT_OK(set_query_buffers(*query_r, buffers, buffer_sizes));
+  RETURN_NOT_OK(set_query_buffers(*query_r, sparse_mode, buffers, buffer_sizes));
   RETURN_NOT_OK((*query_r)->set_subarray(subarray));
+  if(sparse_mode)
+    RETURN_NOT_OK((*query_r)->set_sparse_mode());
+  // TODO: in Reader, check read_all_tiles and filter_all_tiles
 
   // Get last fragment URI, which will be the URI of the consolidated fragment
   *new_fragment_uri = (*query_r)->last_fragment_uri();
@@ -402,7 +409,7 @@ Status Consolidator::create_queries(
   if (!(*query_r)->array_schema()->is_kv())
     RETURN_NOT_OK((*query_w)->set_layout(layout));
   RETURN_NOT_OK((*query_w)->set_subarray(subarray));
-  RETURN_NOT_OK(set_query_buffers(*query_w, buffers, buffer_sizes));
+  RETURN_NOT_OK(set_query_buffers(*query_w, sparse_mode, buffers, buffer_sizes));
 
   return Status::Ok();
 }
@@ -411,17 +418,23 @@ Status Consolidator::compute_subarray_and_layout(
     Array* array,
     const std::vector<FragmentInfo>& to_consolidate,
     void** subarray,
-    Layout* layout) const {
-  // TODO: the subarray should be computed on whether all fragments
-  // TODO: are dense/sparse, not on whether the array is dense/sparse
-  // TODO: if all fragments are sparse, the layout should be GLOBAL
+    Layout* layout,
+    bool* all_sparse) const {
+  // Check if all fragments to consolidate are sparse
+  *all_sparse = true;
+  for(const auto& f : to_consolidate) {
+    if (!f.sparse_) {
+      *all_sparse = false;
+      break;
+    }
+  }
 
   auto array_schema = array->array_schema();
   assert(array_schema != nullptr);
   assert(*subarray == nullptr);
 
   // Create subarray only for the dense case
-  if (array_schema->dense()) {
+  if (!all_sparse) {
     *subarray = std::malloc(2 * array_schema->coords_size());
     if (*subarray == nullptr)
       return LOG_STATUS(Status::ConsolidationError(
@@ -687,7 +700,7 @@ Status Consolidator::rename_new_fragment_uri(URI* uri) const {
 }
 
 Status Consolidator::set_query_buffers(
-    Query* query, void** buffers, uint64_t* buffer_sizes) const {
+    Query* query, bool sparse_mode, void** buffers, uint64_t* buffer_sizes) const {
   auto dense = query->array_schema()->dense();
   auto attributes = query->array_schema()->attributes();
   unsigned bid = 0;
@@ -706,7 +719,7 @@ Status Consolidator::set_query_buffers(
       bid += 2;
     }
   }
-  if (!dense) // TODO: or if force-sparse
+  if (!dense || sparse_mode)
     RETURN_NOT_OK(
         query->set_buffer(constants::coords, buffers[bid], &buffer_sizes[bid]));
 
