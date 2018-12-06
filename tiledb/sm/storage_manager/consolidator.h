@@ -355,7 +355,10 @@ class Consolidator {
    * @param buffer_sizes The buffer sizes.
    */
   Status set_query_buffers(
-      Query* query, bool sparse_mode, void** buffers, uint64_t* buffer_sizes) const;
+      Query* query,
+      bool sparse_mode,
+      void** buffers,
+      uint64_t* buffer_sizes) const;
 
   /**
    * Updates the `fragment_info` by removing `to_consolidate` and

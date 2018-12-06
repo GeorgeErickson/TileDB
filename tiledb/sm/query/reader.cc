@@ -91,6 +91,7 @@ Reader::Reader() {
   read_state_.subarray_ = nullptr;
   read_state_.initialized_ = false;
   read_state_.overflowed_ = false;
+  sparse_mode_ = false;
 }
 
 Reader::~Reader() {
@@ -351,7 +352,7 @@ Status Reader::read() {
     reset_buffer_sizes();
 
     // Perform dense or sparse read if there are fragments
-    if (array_schema_->dense()) {
+    if (array_schema_->dense() && !sparse_mode_) {
       RETURN_NOT_OK(dense_read());
     } else {
       RETURN_NOT_OK(sparse_read());
@@ -498,6 +499,28 @@ Status Reader::set_layout(Layout layout) {
 
   layout_ = layout;
 
+  return Status::Ok();
+}
+
+Status Reader::set_sparse_mode(bool sparse_mode) {
+  if (!array_schema_->dense())
+    return LOG_STATUS(Status::ReaderError(
+        "Cannot set sparse mode; Only applicable to dense arrays"));
+
+  bool all_sparse = true;
+  for (const auto& f : fragment_metadata_) {
+    if (f->dense()) {
+      all_sparse = false;
+      break;
+    }
+  }
+
+  if (!all_sparse)
+    return LOG_STATUS(
+        Status::ReaderError("Cannot set sparse mode; Only applicable to opened "
+                            "dense arrays having only sparse fragments"));
+
+  sparse_mode_ = sparse_mode;
   return Status::Ok();
 }
 
@@ -1476,7 +1499,7 @@ Status Reader::filter_all_tiles(
   // Prepare attributes
   std::set<std::string> all_attributes;
   for (const auto& attr : attributes_) {
-    if (array_schema_->dense() && attr == constants::coords)
+    if (array_schema_->dense() && attr == constants::coords && !sparse_mode_)
       continue;  // Skip coords in dense case - no actual tiles to filter
     all_attributes.insert(attr);
   }
@@ -1823,7 +1846,7 @@ Status Reader::read_all_tiles(
   // Prepare attributes
   std::set<std::string> all_attributes;
   for (const auto& attr : attributes_) {
-    if (array_schema_->dense() && attr == constants::coords)
+    if (array_schema_->dense() && attr == constants::coords && !sparse_mode_)
       continue;  // Skip coords in dense case - no actual tiles to read
     all_attributes.insert(attr);
   }

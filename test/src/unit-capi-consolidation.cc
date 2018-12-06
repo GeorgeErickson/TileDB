@@ -671,7 +671,8 @@ void ConsolidationFx::write_dense_vector_4_fragments_mixed() {
   CHECK(rc == TILEDB_OK);
   rc = tiledb_query_set_buffer(ctx_, query_2, "a", a_2, &a_2_size);
   CHECK(rc == TILEDB_OK);
-  rc = tiledb_query_set_buffer(ctx_, query_2, TILEDB_COORDS, coords_2, &coords_2_size);
+  rc = tiledb_query_set_buffer(
+      ctx_, query_2, TILEDB_COORDS, coords_2, &coords_2_size);
   CHECK(rc == TILEDB_OK);
   rc = tiledb_query_submit(ctx_, query_2);
   CHECK(rc == TILEDB_OK);
@@ -685,7 +686,8 @@ void ConsolidationFx::write_dense_vector_4_fragments_mixed() {
   CHECK(rc == TILEDB_OK);
   rc = tiledb_query_set_buffer(ctx_, query_3, "a", a_3, &a_3_size);
   CHECK(rc == TILEDB_OK);
-  rc = tiledb_query_set_buffer(ctx_, query_3, TILEDB_COORDS, coords_3, &coords_3_size);
+  rc = tiledb_query_set_buffer(
+      ctx_, query_3, TILEDB_COORDS, coords_3, &coords_3_size);
   CHECK(rc == TILEDB_OK);
   rc = tiledb_query_submit(ctx_, query_3);
   CHECK(rc == TILEDB_OK);
@@ -1369,7 +1371,7 @@ void ConsolidationFx::read_dense_vector_mixed() {
 
   // Check buffers
   CHECK(sizeof(c_a) == a_size);
-  for(int i=0; i<410; ++i)
+  for (int i = 0; i < 410; ++i)
     CHECK(a[i] == c_a[i]);
 
   // Close array
@@ -2913,7 +2915,8 @@ TEST_CASE_METHOD(
 
 TEST_CASE_METHOD(
     ConsolidationFx,
-    "C API: Test advanced consolidation, dense array mixing both sparse and dense fragments",
+    "C API: Test advanced consolidation, dense array mixing both sparse and "
+    "dense fragments",
     "[capi], [consolidation], [consolidation-adv], "
     "[consolidation-adv-dense-mixed]") {
   remove_dense_vector();
